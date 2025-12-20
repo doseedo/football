@@ -1,0 +1,48 @@
+pitch:
+  length: 105.0
+  width: 68.0
+  center_circle:
+    x: 52.5
+    y: 34.0
+    radius: 9.15
+
+keypoints:
+  - name: "corner_top_left"
+    x: 0.0
+    y: 0.0
+  - name: "corner_top_right"
+    x: 105.0
+    y: 0.0
+  - name: "corner_bottom_left"
+    x: 0.0
+    y: 68.0
+  - name: "corner_bottom_right"
+    x: 105.0
+    y: 68.0
+  - name: "center_top"
+    x: 52.5
+    y: 0.0
+  - name: "center_bottom"
+    x: 52.5
+    y: 68.0
+  - name: "center_spot"
+    x: 52.5
+    y: 34.0
+  - name: "penalty_spot_left"
+    x: 11.0
+    y: 34.0
+  - name: "penalty_spot_right"
+    x: 94.0
+    y: 34.0
+  - name: "penalty_left_top_edge"
+    x: 16.5
+    y: 13.85
+  - name: "penalty_left_bottom_edge"
+    x: 16.5
+    y: 54.15
+  - name: "penalty_right_top_edge"
+    x: 88.5
+    y: 13.85
+  - name: "penalty_right_bottom_edge"
+    x: 88.5
+    y: 54.15

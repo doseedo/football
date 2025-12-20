@@ -1,0 +1,63 @@
+project:
+  name: "football-tracker"
+  version: "0.1.0"
+
+video:
+  input_path: "data/input/"
+  output_path: "data/output/"
+  cache_path: "data/cache/"
+
+processing:
+  frame_rate: 25
+  batch_size: 8
+  device: "cuda"
+  half_precision: true
+
+detection:
+  player:
+    model: "yolov8x.pt"
+    confidence: 0.3
+    iou_threshold: 0.5
+    min_height: 30
+    max_height: 400
+  ball:
+    model: "yolov8x.pt"
+    confidence: 0.2
+    temporal_window: 5
+
+tracking:
+  tracker: "bytetrack"
+  track_high_thresh: 0.5
+  track_low_thresh: 0.1
+  new_track_thresh: 0.6
+  track_buffer: 30
+  match_thresh: 0.8
+
+homography:
+  method: "keypoint"
+  min_keypoints: 4
+  ransac_threshold: 3.0
+  temporal_smoothing: true
+  smoothing_window: 15
+
+team_classification:
+  method: "kmeans"
+  n_clusters: 3
+  color_space: "LAB"
+
+identity:
+  jersey_ocr:
+    enabled: true
+    confidence_threshold: 0.7
+    aggregation_window: 50
+  manual_init: true
+
+metrics:
+  speed_smoothing: 5
+  sprint_threshold: 25.0
+  high_intensity_threshold: 19.8
+
+output:
+  format: ["json", "csv"]
+  include_raw_detections: false
+  visualization: true

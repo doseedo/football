@@ -1,0 +1,171 @@
+# DETR (Detection Transformer) Configuration
+# For end-to-end player and ball detection
+
+model:
+  name: "detr_football"
+
+  # Backbone
+  backbone: "resnet50"  # resnet50, resnet101
+  pretrained: true
+  pretrained_path: null
+  train_backbone: true
+
+  # Transformer
+  transformer:
+    num_encoder_layers: 6
+    num_decoder_layers: 6
+    dim_feedforward: 2048
+    hidden_dim: 256
+    dropout: 0.1
+    num_heads: 8
+    normalize_before: false
+
+  # Detection
+  num_queries: 50  # Maximum objects to detect (23 players + ball + extras)
+  num_classes: 3   # player, ball, referee
+
+  # Auxiliary decoders for deep supervision
+  aux_loss: true
+
+training:
+  batch_size: 8  # DETR requires small batch size due to memory
+  accumulation_steps: 4  # Effective batch size = 32
+  num_epochs: 300
+
+  learning_rate: 0.0001
+  lr_backbone: 0.00001  # Lower LR for pretrained backbone
+  weight_decay: 0.0001
+
+  optimizer: "adamw"
+  scheduler:
+    type: "step"
+    step_size: 200
+    gamma: 0.1
+
+  # Loss weights (Hungarian matching)
+  loss_weights:
+    class: 2.0
+    bbox: 5.0
+    giou: 2.0
+
+  # Class weights (handle class imbalance)
+  class_weights:
+    player: 1.0
+    ball: 2.0  # Ball is harder to detect
+    referee: 1.0
+    no_object: 0.1  # Background class
+
+data:
+  dataset: "soccernet_detection"
+  root_path: "data/training/soccernet_detection"
+
+  # Additional annotation sources
+  additional_datasets:
+    - name: "coco_persons"  # Pre-training
+      path: "data/training/coco"
+      use_for_pretrain: true
+      classes: [0]  # Only person class
+
+  # Image preprocessing
+  image_size: [800, 1333]  # height x width (multi-scale)
+  scales: [480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800]
+  max_size: 1333
+
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+  # Data splits
+  train_split: 0.85
+  val_split: 0.1
+  test_split: 0.05
+
+  num_workers: 4
+  pin_memory: true
+
+checkpoints:
+  save_dir: "models/checkpoints/detr"
+  save_frequency: 10
+  keep_top_k: 3
+  monitor: "val_mAP"
+  mode: "max"
+
+logging:
+  wandb:
+    enabled: true
+    project: "football-tracking-detr"
+    entity: null
+    tags: ["detr", "detection", "transformer"]
+
+  log_frequency: 50
+  visualize_predictions: true
+  num_vis_samples: 4
+
+evaluation:
+  metrics:
+    - "mAP"
+    - "AP50"  # AP at IoU=0.5
+    - "AP75"  # AP at IoU=0.75
+    - "precision"
+    - "recall"
+
+  # Per-class metrics
+  per_class_metrics: true
+
+  # IoU thresholds for evaluation
+  iou_thresholds: [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+
+augmentation:
+  enabled: true
+
+  # DETR-specific augmentations
+  random_crop:
+    enabled: true
+    min_size: 384
+    max_size: 600
+
+  random_resize:
+    enabled: true
+    sizes: [400, 500, 600]
+    max_size: 1333
+
+  # Photometric
+  brightness: 0.3
+  contrast: 0.3
+  saturation: 0.3
+  hue: 0.1
+
+  # Geometric
+  random_flip: 0.5
+
+  # Mosaic augmentation
+  mosaic:
+    enabled: false
+    probability: 0.5
+
+# Inference settings
+inference:
+  confidence_threshold: 0.7
+  nms_threshold: 0.5  # Post-processing NMS
+
+resume:
+  enabled: false
+  checkpoint_path: null
+  strict_load: true
+
+  # Resume from COCO pre-trained DETR
+  from_pretrained: false
+  pretrained_detr_path: null
+
+mixed_precision: true
+
+distributed:
+  enabled: false
+  backend: "nccl"
+  world_size: 1
+  find_unused_parameters: true
+
+# Gradient clipping (important for DETR training stability)
+gradient_clip:
+  enabled: true
+  max_norm: 0.1

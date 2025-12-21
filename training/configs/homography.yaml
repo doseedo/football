@@ -1,0 +1,96 @@
+# Homography Estimation Model Configuration
+# For pitch keypoint detection and camera calibration
+
+model:
+  name: "homography_keypoint_net"
+  backbone: "resnet50"  # resnet34, resnet50, efficientnet_b0
+  pretrained: true
+  num_keypoints: 29  # Standard soccer pitch keypoints
+  heatmap_size: [64, 64]  # Output heatmap resolution
+  feature_channels: 256
+
+training:
+  batch_size: 16
+  num_epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer: "adam"  # adam, adamw, sgd
+  scheduler:
+    type: "cosine"  # step, cosine, plateau
+    warmup_epochs: 5
+    min_lr: 0.00001
+
+  # Loss weights
+  loss_weights:
+    heatmap_mse: 1.0
+    heatmap_focal: 0.5
+    geometric_constraint: 0.3
+    reprojection: 2.0
+
+  # Data augmentation during training
+  augmentation:
+    enabled: true
+    brightness: 0.2
+    contrast: 0.2
+    saturation: 0.2
+    hue: 0.1
+    rotation: 15  # degrees
+    scale: [0.9, 1.1]
+    perspective: 0.1
+
+data:
+  dataset: "soccernet_calibration"  # soccernet_calibration, worldcup2014, custom
+  root_path: "data/training/soccernet"
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  num_workers: 4
+  pin_memory: true
+
+  # Preprocessing
+  image_size: [512, 512]  # Input image resolution
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+checkpoints:
+  save_dir: "models/checkpoints/homography"
+  save_frequency: 5  # Save every N epochs
+  keep_top_k: 3  # Keep best K checkpoints
+  monitor: "val_reprojection_error"
+  mode: "min"
+
+logging:
+  wandb:
+    enabled: true
+    project: "football-tracking-homography"
+    entity: null
+    tags: ["homography", "keypoint", "calibration"]
+
+  log_frequency: 10  # Log every N batches
+  visualize_predictions: true
+  num_vis_samples: 4
+
+evaluation:
+  metrics:
+    - "reprojection_error"
+    - "keypoint_pck"  # Percentage of Correct Keypoints
+    - "homography_accuracy"
+
+  # PCK threshold in pixels
+  pck_threshold: 5.0
+
+# Resume training from checkpoint
+resume:
+  enabled: false
+  checkpoint_path: null
+  strict_load: true
+
+# Mixed precision training
+mixed_precision: true
+
+# Distributed training
+distributed:
+  enabled: false
+  backend: "nccl"
+  world_size: 1

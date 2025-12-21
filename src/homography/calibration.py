@@ -1,7 +1,7 @@
 """Camera calibration and homography estimation."""
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 from loguru import logger
@@ -141,3 +141,108 @@ class CoordinateTransformer:
         point = np.array([wx, wy, 1.0])
         pixel_h = self.H_inv @ point
         return (float(pixel_h[0] / pixel_h[2]), float(pixel_h[1] / pixel_h[2]))
+
+
+class DynamicCoordinateTransformer:
+    """Coordinate transformer with support for dynamic/rotating camera footage."""
+
+    def __init__(self, base_homography: Optional[np.ndarray] = None):
+        self.base_H = base_homography
+        self.current_H = base_homography
+        self.current_H_inv = None
+        self._homography_provider: Optional[Callable[[], Optional[np.ndarray]]] = None
+
+        if base_homography is not None:
+            self.set_base_homography(base_homography)
+
+    def set_base_homography(self, H: np.ndarray):
+        """Set the base/reference homography from initial calibration."""
+        self.base_H = H.copy()
+        self.current_H = H.copy()
+        self._update_inverse()
+
+    def set_homography_provider(self, provider: Callable[[], Optional[np.ndarray]]):
+        """Set a callback that provides the current homography (for dynamic updates)."""
+        self._homography_provider = provider
+
+    def update_homography(self, H: np.ndarray):
+        """Update current homography (called each frame for rotating camera)."""
+        self.current_H = H.copy()
+        self._update_inverse()
+
+    def _update_inverse(self):
+        """Update inverse homography matrix."""
+        if self.current_H is not None:
+            try:
+                self.current_H_inv = np.linalg.inv(self.current_H)
+            except np.linalg.LinAlgError:
+                logger.warning("Failed to invert homography matrix")
+                self.current_H_inv = None
+
+    def pixel_to_world(self, pixel_coords: Tuple[float, float]) -> Tuple[float, float]:
+        """Transform pixel coordinates to world coordinates."""
+        # Check if we have a dynamic homography provider
+        if self._homography_provider is not None:
+            H = self._homography_provider()
+            if H is not None:
+                self.current_H = H
+                self._update_inverse()
+
+        if self.current_H is None:
+            raise ValueError("Homography not set")
+
+        px, py = pixel_coords
+        point = np.array([px, py, 1.0])
+        world_h = self.current_H @ point
+
+        # Avoid division by zero
+        if abs(world_h[2]) < 1e-10:
+            return (0.0, 0.0)
+
+        return (float(world_h[0] / world_h[2]), float(world_h[1] / world_h[2]))
+
+    def world_to_pixel(self, world_coords: Tuple[float, float]) -> Tuple[float, float]:
+        """Transform world coordinates to pixel coordinates."""
+        if self._homography_provider is not None:
+            H = self._homography_provider()
+            if H is not None:
+                self.current_H = H
+                self._update_inverse()
+
+        if self.current_H_inv is None:
+            raise ValueError("Homography not set or not invertible")
+
+        wx, wy = world_coords
+        point = np.array([wx, wy, 1.0])
+        pixel_h = self.current_H_inv @ point
+
+        if abs(pixel_h[2]) < 1e-10:
+            return (0.0, 0.0)
+
+        return (float(pixel_h[0] / pixel_h[2]), float(pixel_h[1] / pixel_h[2]))
+
+    def pixel_to_world_batch(self, pixel_coords: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+        """Transform multiple pixel coordinates to world coordinates."""
+        if self.current_H is None:
+            raise ValueError("Homography not set")
+
+        points = np.array([[px, py, 1.0] for px, py in pixel_coords])
+        world_h = (self.current_H @ points.T).T
+
+        results = []
+        for w in world_h:
+            if abs(w[2]) < 1e-10:
+                results.append((0.0, 0.0))
+            else:
+                results.append((float(w[0] / w[2]), float(w[1] / w[2])))
+
+        return results
+
+    def is_valid(self) -> bool:
+        """Check if transformer has valid homography."""
+        return self.current_H is not None and self.current_H_inv is not None
+
+    @property
+    def H(self) -> Optional[np.ndarray]:
+        """Get current homography matrix (for compatibility)."""
+        return self.current_H

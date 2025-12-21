@@ -1,0 +1,297 @@
+================================================================================
+TACTICAL ANALYSIS GNN - SYSTEM ARCHITECTURE
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         INPUT: Tracking Data                            │
+│  (Players: {track_id, x, y, vx, vy, team} + Ball: {x, y})              │
+└──────────────────────────┬──────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    GRAPH BUILDER (graph_builder.py)                     │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  TrackingGraphBuilder                                           │   │
+│  │  • Convert tracking → graph                                     │   │
+│  │  • Extract 12D node features (position, velocity, team, etc.)  │   │
+│  │  • Build edges (proximity/team/full)                            │   │
+│  │  • Extract 5D edge features (distance, same team, etc.)        │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+└──────────────────────────┬──────────────────────────────────────────────┘
+                           │
+                           ▼
+                 ┌─────────────────┐
+                 │ PyTorch Geometric│
+                 │   Data Object    │
+                 │ • nodes: [N, 12] │
+                 │ • edges: [2, E]  │
+                 │ • edge_attr: [E,5│
+                 └────────┬─────────┘
+                          │
+         ┌────────────────┼────────────────┐
+         │                │                │
+         ▼                ▼                ▼
+┌────────────────┐ ┌──────────────┐ ┌───────────────┐
+│  GNN Model     │ │ Team State   │ │   Tactical    │
+│(gnn_model.py)  │ │(team_state.py│ │   Metrics     │
+│                │ │               │ │(tactical_     │
+│ TacticalGNN    │ │TeamState     │ │ metrics.py)   │
+│ • 4 layers GAT │ │Classifier    │ │               │
+│ • 128 hidden   │ │              │ │TacticalMetrics│
+│ • Residual     │ │• GNN-based   │ │Calculator     │
+│ • Batch norm   │ │  or rule-    │ │               │
+│                │ │  based       │ │• Voronoi      │
+│ Outputs:       │ │              │ │  space ctrl   │
+│ • Node emb     │ │Outputs:      │ │• Pressing     │
+│   [N, 64]      │ │• State (5)   │ │• Pass lanes   │
+│ • Graph emb    │ │• Possession  │ │• xT grid      │
+│   [64]         │ │• Pressing    │ │• 16 metrics   │
+└────────┬───────┘ └──────┬───────┘ └───────┬───────┘
+         │                │                  │
+         └────────────────┼──────────────────┘
+                          │
+                          ▼
+        ┌──────────────────────────────────┐
+        │    TACTICAL ANALYSIS OUTPUT      │
+        │                                  │
+        │ • Tactical State:                │
+        │   - ATTACKING / DEFENDING /      │
+        │     TRANSITION_ATTACK /          │
+        │     TRANSITION_DEFENSE /         │
+        │     SET_PIECE                    │
+        │                                  │
+        │ • Team Dynamics:                 │
+        │   - Possession team & prob       │
+        │   - Pressing intensity (0-1)     │
+        │   - Defensive line height        │
+        │   - Team compactness             │
+        │                                  │
+        │ • Spatial Metrics:               │
+        │   - Space control ratio          │
+        │   - Voronoi areas per player     │
+        │   - Pitch control %              │
+        │                                  │
+        │ • Passing & Threat:              │
+        │   - Passing lane count & quality │
+        │   - Progressive options          │
+        │   - Expected threat (xT)         │
+        │   - Pressure on ball             │
+        └──────────────────────────────────┘
+
+================================================================================
+DATA FLOW
+================================================================================
+
+Frame Data → Graph → GNN Embeddings → Classification + Metrics → Output
+
+1. GRAPH CONSTRUCTION (graph_builder.py)
+   Input:  Dict with 'players' and 'ball'
+   Output: PyTorch Geometric Data object
+   Time:   <1ms per frame
+
+2. GNN FORWARD PASS (gnn_model.py)
+   Input:  Graph Data object
+   Output: Node embeddings [N, 64], Graph embedding [64]
+   Time:   1-2ms (GPU) / 5-10ms (CPU)
+
+3. STATE CLASSIFICATION (team_state.py)
+   Input:  Graph + GNN embeddings
+   Output: TeamState object
+   Time:   1-2ms
+
+4. METRICS CALCULATION (tactical_metrics.py)
+   Input:  Graph + ball position + possession team
+   Output: TacticalMetrics object (16 metrics)
+   Time:   2-5ms
+
+TOTAL PIPELINE: ~10-15ms per frame (CPU), ~5ms (GPU)
+
+================================================================================
+GRAPH STRUCTURE
+================================================================================
+
+NODES (Players):
+┌──────────────────────────────────────────┐
+│ Node Features (12D per player):         │
+│ [0-1]   x_norm, y_norm     (position)   │
+│ [2-3]   vx, vy             (velocity)   │
+│ [4]     speed              (scalar)     │
+│ [5]     dist_to_ball       (normalized) │
+│ [6]     angle_to_ball      (normalized) │
+│ [7-9]   team_0, team_1, unknown (1-hot) │
+│ [10]    zone               (pitch zone) │
+│ [11]    dist_to_own_goal   (normalized) │
+└──────────────────────────────────────────┘
+
+EDGES (Player Relationships):
+┌──────────────────────────────────────────┐
+│ Edge Features (5D per edge):            │
+│ [0-1]   dx_norm, dy_norm   (rel. pos)   │
+│ [2]     distance           (normalized) │
+│ [3]     same_team          (binary)     │
+│ [4]     vel_alignment      (dot product)│
+└──────────────────────────────────────────┘
+
+Edge Construction Modes:
+• PROXIMITY: Connect players within 15m + same-team bonus
+• TEAM:      Only same-team connections
+• FULL:      Fully connected graph (all pairs)
+
+================================================================================
+GNN ARCHITECTURE
+================================================================================
+
+TacticalGNN (4-layer GAT):
+
+Input [N, 12]
+     │
+     ▼
+  Linear Projection → [N, 128]
+     │
+     ▼
+  ┌────────────────┐
+  │ GAT Layer 1    │ (4 heads, concat)
+  │ + BatchNorm    │
+  │ + ReLU         │
+  │ + Dropout      │
+  │ + Residual     │
+  └────┬───────────┘
+       ▼
+  ┌────────────────┐
+  │ GAT Layer 2    │ (4 heads, concat)
+  │ + BatchNorm    │
+  │ + ReLU         │
+  │ + Dropout      │
+  │ + Residual     │
+  └────┬───────────┘
+       ▼
+  ┌────────────────┐
+  │ GAT Layer 3    │ (4 heads, concat)
+  │ + BatchNorm    │
+  │ + ReLU         │
+  │ + Dropout      │
+  │ + Residual     │
+  └────┬───────────┘
+       ▼
+  ┌────────────────┐
+  │ GAT Layer 4    │ (1 head, no concat)
+  └────┬───────────┘
+       ▼
+  Node Embeddings [N, 64]
+       │
+       ├─── Global Mean Pool ──┐
+       │                       │
+       └─── Global Max Pool ───┤
+                               │
+                               ▼
+                        Graph Embedding [64]
+
+================================================================================
+TACTICAL STATES (Classification)
+================================================================================
+
+5 Tactical States:
+┌─────────────────────────────────────────────────────────────────┐
+│ 0. ATTACKING             - Established possession, attacking    │
+│ 1. DEFENDING             - Defensive organization               │
+│ 2. TRANSITION_ATTACK     - Counterattack (high velocity)        │
+│ 3. TRANSITION_DEFENSE    - Losing possession                    │
+│ 4. SET_PIECE             - Static situations (FK, corners)      │
+└─────────────────────────────────────────────────────────────────┘
+
+Classification Methods:
+1. GNN-based (trainable):
+   Graph Embedding → MLP → Softmax → State
+
+2. Rule-based (no training):
+   Ball position + velocities + player positions → State
+
+================================================================================
+TACTICAL METRICS (16 Total)
+================================================================================
+
+Team Structure (6):
+┌────────────────────────────────────────┐
+│ • Defensive line height (meters)      │
+│ • Offensive line height (meters)      │
+│ • Team length (meters)                │
+│ • Team width (meters)                 │
+│ • Team compactness (avg distance)     │
+│ • Team centroid (x, y)                │
+└────────────────────────────────────────┘
+
+Space Control (3):
+┌────────────────────────────────────────┐
+│ • Space control ratio (Voronoi)       │
+│ • Individual player areas (dict)      │
+│ • Pitch control percentage            │
+└────────────────────────────────────────┘
+
+Pressure & Passing (4):
+┌────────────────────────────────────────┐
+│ • Pressure on ball carrier (0-1)      │
+│ • Passing lane count                  │
+│ • Passing lane quality (0-1)          │
+│ • Progressive pass options            │
+└────────────────────────────────────────┘
+
+Threat (2):
+┌────────────────────────────────────────┐
+│ • Expected threat - xT (0-1)          │
+│ • Threatening players count           │
+└────────────────────────────────────────┘
+
+Zones (1):
+┌────────────────────────────────────────┐
+│ • High pressure zone locations        │
+└────────────────────────────────────────┘
+
+================================================================================
+TRAINING PIPELINE
+================================================================================
+
+Data Preparation:
+  Tracking Data + Labels → TacticalGraphDataset
+
+Training Loop:
+  ┌────────────────────────────────────────┐
+  │ 1. Build graph from frame             │
+  │ 2. Forward pass through GNN           │
+  │ 3. Classify state (5-way softmax)     │
+  │ 4. Calculate loss (CrossEntropy)      │
+  │ 5. Backprop + gradient clipping       │
+  │ 6. Update weights                      │
+  └────────────────────────────────────────┘
+
+Hyperparameters:
+  • Epochs: 30-50
+  • Batch size: 16-32
+  • Learning rate: 0.001 (ReduceLROnPlateau)
+  • Optimizer: Adam
+  • Loss: CrossEntropyLoss
+
+Expected Performance:
+  • State accuracy: 75-85%
+  • Possession accuracy: 90-95%
+  • Training time: 2-4 hours (GPU, 10k samples)
+
+================================================================================
+FILES STRUCTURE
+================================================================================
+
+src/tactical/
+├── __init__.py              - Module exports
+├── graph_builder.py         - Graph construction (~350 lines)
+├── gnn_model.py            - GNN architectures (~380 lines)
+├── team_state.py           - State classification (~530 lines)
+├── tactical_metrics.py     - Tactical metrics (~630 lines)
+├── train_gnn.py            - Training pipeline (~430 lines)
+├── example_usage.py        - Usage examples (~320 lines)
+├── test_integration.py     - Integration tests (~120 lines)
+├── README.md               - Full documentation
+├── QUICK_START.md          - Quick reference
+└── ARCHITECTURE.txt        - This file
+
+Total: ~2,600 lines of code
+
+================================================================================

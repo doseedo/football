@@ -1,0 +1,171 @@
+# Player Re-Identification Configuration
+# For consistent player tracking across frames and occlusions
+
+model:
+  name: "player_reid"
+
+  # Feature extractor
+  backbone: "osnet_x1_0"  # osnet_x1_0, resnet50, efficientnet_b4
+  pretrained: true
+  pretrained_path: null
+
+  # Feature dimensions
+  feature_dim: 512
+  embedding_dim: 256
+
+  # Additional features
+  use_spatial_features: true  # Body keypoints, pose
+  use_temporal_features: true  # Motion patterns
+
+  # Multi-head architecture
+  heads:
+    appearance: true
+    jersey_color: true
+    body_shape: true
+
+training:
+  batch_size: 64  # P*K where P=persons, K=images per person
+  num_instances: 4  # K: images per identity
+  num_epochs: 120
+
+  learning_rate: 0.00035
+  weight_decay: 0.0005
+  optimizer: "adam"
+  scheduler:
+    type: "warmup_multistep"
+    warmup_epochs: 10
+    milestones: [40, 70]
+    gamma: 0.1
+
+  # Loss functions
+  losses:
+    triplet:
+      enabled: true
+      margin: 0.3
+      weight: 1.0
+
+    center_loss:
+      enabled: true
+      weight: 0.0005
+      num_classes: 1000  # Estimated number of unique players
+
+    softmax:
+      enabled: true
+      weight: 1.0
+      label_smoothing: 0.1
+
+    contrastive:
+      enabled: true
+      weight: 0.5
+      temperature: 0.07
+
+data:
+  # Main dataset
+  dataset: "soccernet_reid"
+  root_path: "data/training/reid"
+
+  # Additional datasets
+  additional_datasets:
+    - name: "market1501"  # Pre-training on general re-ID
+      path: "data/training/market1501"
+      use_for_pretrain: true
+    - name: "synthetic_players"
+      path: "data/training/synthetic_players"
+      weight: 0.2
+
+  # Sampling strategy
+  sampler: "RandomIdentitySampler"
+
+  # Image preprocessing
+  image_size: [256, 128]  # height x width
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+  # Data splits
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+
+  num_workers: 8
+  pin_memory: true
+
+checkpoints:
+  save_dir: "models/checkpoints/reid"
+  save_frequency: 5
+  keep_top_k: 3
+  monitor: "val_mAP"
+  mode: "max"
+
+logging:
+  wandb:
+    enabled: true
+    project: "football-tracking-reid"
+    entity: null
+    tags: ["reid", "player", "tracking"]
+
+  log_frequency: 20
+  visualize_embeddings: true  # t-SNE visualization
+  num_vis_samples: 16
+
+evaluation:
+  metrics:
+    - "mAP"           # mean Average Precision
+    - "cmc"           # Cumulative Matching Characteristics
+    - "rank1"         # Rank-1 accuracy
+    - "rank5"
+    - "rank10"
+
+  # Re-ranking
+  use_reranking: true
+  reranking_k1: 20
+  reranking_k2: 6
+  reranking_lambda: 0.3
+
+augmentation:
+  enabled: true
+
+  # Random augmentations
+  random_flip: 0.5
+  random_crop: true
+  padding: 10
+
+  # Color augmentation
+  random_brightness: 0.2
+  random_contrast: 0.2
+  random_saturation: 0.2
+  random_hue: 0.1
+
+  # Random erasing (simulates occlusion)
+  random_erase:
+    enabled: true
+    probability: 0.5
+    max_area: 0.4
+
+  # Advanced augmentation
+  random_patch: 0.5  # Random patch swapping
+  auto_augment: false
+
+# Test-time augmentation
+test_augmentation:
+  enabled: true
+  flip: true
+
+resume:
+  enabled: false
+  checkpoint_path: null
+  strict_load: true
+
+mixed_precision: true
+
+distributed:
+  enabled: false
+  backend: "nccl"
+  world_size: 1
+
+# Fine-tuning on specific matches
+fine_tuning:
+  enabled: false
+  freeze_backbone: false
+  epochs: 20
+  learning_rate: 0.00001

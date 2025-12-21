@@ -9,6 +9,7 @@ An end-to-end football (soccer) XY tracking system that processes single-camera 
 - **Team Classification**: K-means clustering based on jersey colors
 - **Multi-Object Tracking**: ByteTrack integration via Supervision
 - **Homography Estimation**: Interactive calibration for pixel-to-world coordinate transformation
+- **Rotating Camera Support**: Automatic detection and compensation for camera pan (up to ±45°)
 - **Physical Metrics**: Speed, distance, acceleration, sprint detection
 - **Data Export**: JSON and CSV output formats
 - **Visualization**: Pitch plots and animations using mplsoccer
@@ -19,10 +20,19 @@ JSON/CSV files containing timestamped XY coordinates (in meters) for every playe
 
 ## Footage Specifications
 
+### Static Camera (Default)
 - Camera: Centered, elevated, fixed position
 - Resolution: 4K (3840x2160)
 - Frame rate: 25-30 fps (standard broadcast)
 - Angle: Consistent throughout match (no pan/tilt/zoom)
+
+### Rotating Camera (Supported)
+- Camera: Centered, elevated, on stable tripod
+- Resolution: 4K (3840x2160)
+- Frame rate: 25-30 fps
+- Field of view: 80%+ of pitch visible at all times
+- Pan range: Up to ±45° rotation to follow play
+- **Note**: Mixed footage with both stable and rotating segments is supported
 
 ## Project Structure
 
@@ -44,7 +54,9 @@ football-tracker/
 │   │   └── tracker.py
 │   ├── homography/
 │   │   ├── __init__.py
-│   │   └── calibration.py
+│   │   ├── calibration.py
+│   │   ├── pitch_detector.py      # Automatic pitch line detection
+│   │   └── rotation_handler.py    # Camera rotation compensation
 │   ├── metrics/
 │   │   ├── __init__.py
 │   │   └── physical.py
@@ -76,9 +88,57 @@ bash scripts/download_models.sh
 
 # 3. Place video in data/input/
 
-# 4. Run
+# 4. Run (static camera)
 python -m src.main data/input/match.mp4 --config config/config.yaml --visualize
+
+# 5. Run (rotating camera - use --rotation flag)
+python -m src.main data/input/match.mp4 --config config/config.yaml --rotation --visualize
 ```
+
+## Rotating Camera Usage
+
+For footage where the camera pans/rotates to follow play:
+
+### Option 1: Command Line Flag
+```bash
+python -m src.main data/input/match.mp4 --rotation --visualize
+```
+
+### Option 2: Config File
+Edit `config/config.yaml` and set:
+```yaml
+rotation:
+  enabled: true
+```
+
+### How It Works
+
+1. **Initial Calibration**: Manual keypoint selection on first frame (same as static camera)
+2. **Feature Tracking**: ORB features are tracked frame-to-frame on pitch surface
+3. **Rotation Detection**: System detects when camera is rotating vs. stable
+4. **Homography Updates**: Pixel-to-world transformation is updated each frame
+5. **Smoothing**: Temporal smoothing prevents jitter in world coordinates
+
+### Rotation Configuration Options
+
+```yaml
+rotation:
+  enabled: true                # Enable rotation handling
+  max_angle: 45.0              # Maximum expected rotation (degrees)
+  rotation_threshold: 0.5      # Degrees/frame to detect rotation
+  stabilization_frames: 10     # Frames to confirm camera stopped
+  buffer_size: 30              # Homography buffer for smoothing
+  smoothing_factor: 0.3        # Lower = smoother, higher = responsive
+  redetection_interval: 100    # Re-detect keypoints every N frames
+  min_keypoints: 4             # Minimum keypoints for updates
+```
+
+### Tips for Rotating Camera Footage
+
+1. **Calibrate during stable period**: For best results, calibrate when camera is not moving
+2. **Good lighting**: Feature tracking works better with consistent lighting
+3. **Visible pitch lines**: More visible white lines = better rotation tracking
+4. **Gradual movements**: Sudden jerky movements may cause tracking gaps
 
 ## Calibration Instructions
 
@@ -125,6 +185,9 @@ Recommended points: 4 corners, center circle intersections, penalty spots.
 | Bad homography | Use more keypoints accurately |
 | Missed ball | Lower ball confidence, increase temporal_window |
 | Wrong teams | Adjust color_space (try HSV or RGB) |
+| Jittery coordinates (rotating) | Lower smoothing_factor (e.g., 0.1) |
+| Slow rotation response | Increase smoothing_factor (e.g., 0.5) |
+| Lost tracking during pan | Increase buffer_size, lower rotation_threshold |
 
 ## Hardware Requirements
 

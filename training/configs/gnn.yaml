@@ -1,0 +1,224 @@
+# Graph Neural Network Configuration
+# For tactical analysis, team formation, and strategy prediction
+
+model:
+  name: "football_gnn"
+
+  # Node encoder (player/ball features)
+  node_encoder:
+    input_dim: 6  # x, y, vx, vy, team, role
+    hidden_dim: 128
+    num_layers: 2
+    activation: "relu"
+
+  # Graph convolution layers
+  graph_conv:
+    type: "gat"  # gat (Graph Attention), gcn, sage
+    hidden_dim: 128
+    num_layers: 4
+    num_heads: 4  # For GAT
+    dropout: 0.2
+    edge_features: true
+    edge_dim: 3  # distance, angle, relative_velocity
+
+  # Temporal modeling
+  temporal:
+    type: "lstm"  # lstm, gru, transformer
+    hidden_dim: 128
+    num_layers: 2
+    bidirectional: true
+
+  # Output heads
+  heads:
+    # Tactical classification
+    formation_classifier:
+      enabled: true
+      num_classes: 15  # 4-4-2, 4-3-3, 3-5-2, etc.
+      hidden_dim: 64
+
+    # Player role prediction
+    role_predictor:
+      enabled: true
+      num_classes: 10  # GK, CB, FB, DM, CM, AM, W, ST, etc.
+      hidden_dim: 64
+
+    # Team strategy
+    strategy_classifier:
+      enabled: true
+      num_classes: 8  # Attack, defense, counter, possession, etc.
+      hidden_dim: 64
+
+    # Future trajectory prediction
+    trajectory_predictor:
+      enabled: true
+      prediction_horizon: 25  # frames
+      output_dim: 2  # x, y coordinates
+
+training:
+  batch_size: 32
+  sequence_length: 50  # frames per sequence
+  num_epochs: 150
+
+  learning_rate: 0.001
+  weight_decay: 0.00005
+  optimizer: "adamw"
+  scheduler:
+    type: "cosine"
+    warmup_epochs: 10
+    min_lr: 0.00001
+
+  # Multi-task loss weights
+  loss_weights:
+    formation: 1.0
+    role: 0.8
+    strategy: 1.0
+    trajectory: 1.5
+
+  # Label smoothing for classification
+  label_smoothing: 0.1
+
+data:
+  # Tracking data with tactical annotations
+  dataset: "soccernet_tracking_annotated"
+  root_path: "data/training/soccernet_tracking"
+
+  # Additional data sources
+  additional_datasets:
+    - name: "skillcorner"
+      path: "data/training/skillcorner"
+      weight: 0.6
+    - name: "statsbomb"
+      path: "data/training/statsbomb"
+      weight: 0.3
+
+  # Graph construction
+  graph:
+    # Edge creation strategy
+    connect_all: false  # If false, use distance-based
+    max_distance: 30.0  # meters (for distance-based edges)
+    fully_connected_team: true  # Connect all teammates
+    connect_ball: true  # Connect ball to nearby players
+    temporal_edges: true  # Connect same player across time
+
+  # Temporal settings
+  sequence_length: 50
+  sequence_stride: 25  # Overlap between sequences
+  fps: 25
+
+  # Data splits
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+
+  num_workers: 6
+  pin_memory: true
+
+checkpoints:
+  save_dir: "models/checkpoints/gnn"
+  save_frequency: 5
+  keep_top_k: 3
+  monitor: "val_accuracy"
+  mode: "max"
+
+logging:
+  wandb:
+    enabled: true
+    project: "football-tracking-gnn"
+    entity: null
+    tags: ["gnn", "tactical", "formation", "graph"]
+
+  log_frequency: 20
+  visualize_graphs: true
+  visualize_attention: true  # For GAT
+  num_vis_samples: 4
+
+evaluation:
+  metrics:
+    # Classification metrics
+    - "formation_accuracy"
+    - "formation_f1"
+    - "role_accuracy"
+    - "strategy_accuracy"
+
+    # Trajectory metrics
+    - "trajectory_ade"
+    - "trajectory_fde"
+
+    # Graph metrics
+    - "graph_reconstruction"
+
+  # Confusion matrices
+  save_confusion_matrices: true
+
+augmentation:
+  enabled: true
+
+  # Spatial augmentation
+  rotation: 360  # degrees
+  flip_horizontal: true
+  flip_vertical: true
+
+  # Coordinate noise
+  position_noise: 0.5  # meters
+  velocity_noise: 0.2  # m/s
+
+  # Temporal augmentation
+  time_masking: 0.1  # Randomly mask time steps
+  time_warping: 0.15
+
+  # Graph augmentation
+  edge_dropout: 0.1
+  node_dropout: 0.05
+  feature_masking: 0.1
+
+# Tactical labels (if not in dataset, use heuristics)
+tactical_labels:
+  formations:
+    - "4-4-2"
+    - "4-3-3"
+    - "4-2-3-1"
+    - "3-5-2"
+    - "3-4-3"
+    - "5-3-2"
+    - "4-1-4-1"
+    - "4-5-1"
+
+  roles:
+    - "GK"   # Goalkeeper
+    - "CB"   # Center Back
+    - "FB"   # Full Back
+    - "WB"   # Wing Back
+    - "DM"   # Defensive Midfielder
+    - "CM"   # Central Midfielder
+    - "AM"   # Attacking Midfielder
+    - "W"    # Winger
+    - "ST"   # Striker
+    - "CF"   # Center Forward
+
+  strategies:
+    - "attack"
+    - "defense"
+    - "counter_attack"
+    - "possession"
+    - "pressing"
+    - "transition_attack"
+    - "transition_defense"
+    - "set_piece"
+
+resume:
+  enabled: false
+  checkpoint_path: null
+  strict_load: true
+
+mixed_precision: true
+
+distributed:
+  enabled: false
+  backend: "nccl"
+  world_size: 1
+
+# Interpretability
+interpretability:
+  enabled: true
+  save_attention_weights: true  # For GAT
+  save_edge_importance: true

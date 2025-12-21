@@ -1,0 +1,144 @@
+# 3D Ball Tracking Configuration
+# Estimates 3D ball position and trajectory from 2D observations
+
+model:
+  name: "ball3d_tracker"
+
+  # Detection refinement network
+  detector:
+    backbone: "efficientnet_b3"
+    pretrained: true
+    input_size: [224, 224]
+    feature_dim: 256
+
+  # 3D trajectory estimator
+  trajectory_net:
+    type: "tcn"  # tcn (Temporal Convolutional Network), lstm, transformer
+    input_dim: 4  # x, y, dx, dy
+    hidden_dim: 128
+    num_layers: 6
+    kernel_size: 3
+    dropout: 0.2
+
+  # Physics-informed components
+  physics:
+    enabled: true
+    gravity: 9.81  # m/s^2
+    air_resistance: 0.01
+    bounce_coefficient: 0.7
+
+  # Output
+  predict_3d: true
+  predict_velocity: true
+  predict_trajectory: true
+  trajectory_length: 25  # frames to predict
+
+training:
+  batch_size: 32
+  num_epochs: 150
+  learning_rate: 0.0005
+  weight_decay: 0.0001
+  optimizer: "adamw"
+  scheduler:
+    type: "plateau"
+    patience: 10
+    factor: 0.5
+    min_lr: 0.00001
+
+  # Loss components
+  loss_weights:
+    position_2d: 1.0
+    position_3d: 2.0
+    velocity: 0.5
+    trajectory: 1.0
+    physics_constraint: 0.3
+    temporal_smoothness: 0.2
+
+  # Gaussian NLL for uncertainty
+  use_uncertainty: true
+  uncertainty_weight: 0.1
+
+data:
+  # Datasets with 3D annotations
+  dataset: "synthetic_ball3d"
+  root_path: "data/training/ball3d"
+
+  # Real data (2D only, used with pseudo-labels)
+  real_data:
+    enabled: true
+    path: "data/training/soccernet_ball"
+    weight: 0.3
+
+  # Synthetic data generation
+  synthetic:
+    enabled: true
+    num_samples: 50000
+    trajectory_types:
+      - "parabolic"  # Long passes, shots
+      - "ground"     # Ground passes
+      - "bounce"     # Bouncing trajectories
+
+    # Camera simulation
+    camera_heights: [8.0, 15.0]  # meters
+    camera_angles: [10, 30]      # degrees from horizontal
+    add_noise: true
+    noise_level: 2.0  # pixels
+
+  # Temporal context
+  temporal_window: 10  # frames before and after
+
+  num_workers: 6
+  pin_memory: true
+
+checkpoints:
+  save_dir: "models/checkpoints/ball3d"
+  save_frequency: 5
+  keep_top_k: 3
+  monitor: "val_3d_error"
+  mode: "min"
+
+logging:
+  wandb:
+    enabled: true
+    project: "football-tracking-ball3d"
+    entity: null
+    tags: ["ball", "3d", "trajectory", "physics"]
+
+  log_frequency: 20
+  visualize_trajectories: true
+  num_vis_samples: 6
+
+evaluation:
+  metrics:
+    - "position_error_2d"  # pixels
+    - "position_error_3d"  # meters
+    - "velocity_error"     # m/s
+    - "trajectory_ade"
+    - "trajectory_fde"
+    - "physics_violation"  # How much predictions violate physics
+
+  prediction_horizons: [5, 10, 25]
+
+augmentation:
+  enabled: true
+  # Image augmentation
+  brightness: 0.3
+  contrast: 0.3
+  blur: 0.2
+
+  # Trajectory augmentation
+  temporal_shift: 5  # frames
+  noise_injection: 1.0  # pixels
+  dropout_frames: 0.1
+
+resume:
+  enabled: false
+  checkpoint_path: null
+  strict_load: true
+
+mixed_precision: true
+
+distributed:
+  enabled: false
+  backend: "nccl"
+  world_size: 1

@@ -1,0 +1,99 @@
+# Baller2Vec Training Configuration
+
+# Model architecture
+model:
+  type: baller2vec_plus  # 'baller2vec' or 'baller2vec_plus'
+  d_model: 256
+  num_heads: 8
+  num_layers: 6
+  dim_feedforward: 1024
+  dropout: 0.1
+  max_players: 22
+  use_player_embeddings: true
+  lookahead_steps: 5  # Only for baller2vec_plus
+
+# Data settings
+data:
+  train_path: "data/training/trajectories.npz"
+  val_path: "data/validation/trajectories.npz"
+  sequence_length: 25  # Input sequence length (1s at 25fps)
+  prediction_horizon: 10  # Number of future steps to predict (0.4s)
+  max_players: 22
+  num_workers: 4
+
+# Training settings
+training:
+  epochs: 100
+  batch_size: 32
+  learning_rate: 1e-4
+  weight_decay: 1e-5
+  gradient_clip: 1.0
+
+  # Learning rate schedule
+  scheduler:
+    type: cosine  # 'cosine', 'plateau', or 'step'
+    T_max: 100  # For cosine annealing
+    patience: 10  # For plateau
+    factor: 0.5  # For plateau and step
+
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 15
+    min_delta: 0.001
+
+# Loss weights
+loss:
+  position_weight: 1.0
+  velocity_weight: 0.1
+  use_uncertainty: true  # Only for baller2vec_plus
+
+# Optimization
+optimization:
+  optimizer: adamw  # 'adam' or 'adamw'
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1e-8
+
+# Validation
+validation:
+  interval: 1  # Validate every N epochs
+  metrics:
+    - ade  # Average Displacement Error
+    - fde  # Final Displacement Error
+    - ade_1s  # ADE at 1 second
+    - ade_2s  # ADE at 2 seconds
+
+# Checkpointing
+checkpoint:
+  save_dir: "models/checkpoints"
+  save_best: true
+  save_last: true
+  save_interval: 10  # Save every N epochs
+
+# Logging
+logging:
+  log_dir: "logs"
+  tensorboard: true
+  wandb: false
+  wandb_project: "football-extrapolation"
+  print_interval: 10  # Print every N batches
+
+# Hardware
+hardware:
+  device: cuda  # 'cuda' or 'cpu'
+  num_gpus: 1
+  mixed_precision: true  # Use automatic mixed precision
+  cudnn_benchmark: true
+
+# Data augmentation
+augmentation:
+  enabled: true
+  rotation: 0.1  # Random rotation (radians)
+  scale: 0.05  # Random scale factor
+  noise: 0.1  # Gaussian noise std
+  flip: true  # Random horizontal flip
+
+# Reproducibility
+seed: 42
+deterministic: false

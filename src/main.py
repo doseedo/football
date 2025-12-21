@@ -1,4 +1,4 @@
-"""Main tracking pipeline."""
+"""Main tracking pipeline with support for rotating camera footage."""
 
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -12,7 +12,17 @@ from .detection.player_detector import PlayerDetector
 from .detection.ball_detector import BallDetector
 from .detection.team_classifier import TeamClassifier, Team
 from .tracking.tracker import PlayerTracker
-from .homography.calibration import HomographyEstimator, InteractiveCalibrator, CoordinateTransformer
+from .homography.calibration import (
+    HomographyEstimator,
+    InteractiveCalibrator,
+    CoordinateTransformer,
+    DynamicCoordinateTransformer,
+)
+from .homography.rotation_handler import (
+    RotationHandler,
+    AdaptiveHomographyManager,
+    CameraState,
+)
 from .metrics.physical import PhysicalMetricsCalculator, KalmanSmoother
 from .output.data_export import TrackingDataExporter, create_frame_record
 from .output.visualizer import PitchVisualizer
@@ -33,6 +43,8 @@ class GreenPitchMaskDetector:
 
 
 class FootballTracker:
+    """Football tracking pipeline with support for both static and rotating camera."""
+
     def __init__(self, config_path: str):
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
@@ -44,8 +56,11 @@ class FootballTracker:
         self.device = self.config['processing']['device']
         self.fps = self.config['processing']['frame_rate']
 
+        # Check if rotation handling is enabled
+        self.rotation_enabled = self.config.get('rotation', {}).get('enabled', False)
+
         self._init_components()
-        logger.info("Football tracker initialized")
+        logger.info(f"Football tracker initialized (rotation handling: {self.rotation_enabled})")
 
     def _init_components(self):
         det_config = self.config['detection']
@@ -76,7 +91,26 @@ class FootballTracker:
         )
 
         self.interactive_calibrator = InteractiveCalibrator(self.pitch_template)
-        self.transformer = CoordinateTransformer()
+
+        # Initialize appropriate transformer based on rotation setting
+        if self.rotation_enabled:
+            self.transformer = DynamicCoordinateTransformer()
+            rotation_config = self.config.get('rotation', {})
+            self.rotation_handler = RotationHandler(
+                max_rotation_angle=rotation_config.get('max_angle', 45.0),
+                rotation_threshold=rotation_config.get('rotation_threshold', 0.5),
+                stabilization_frames=rotation_config.get('stabilization_frames', 10),
+                homography_buffer_size=rotation_config.get('buffer_size', 30),
+                smoothing_factor=rotation_config.get('smoothing_factor', 0.3),
+            )
+            self.homography_manager = AdaptiveHomographyManager(
+                redetection_interval=rotation_config.get('redetection_interval', 100),
+                min_keypoints_for_update=rotation_config.get('min_keypoints', 4),
+            )
+        else:
+            self.transformer = CoordinateTransformer()
+            self.rotation_handler = None
+            self.homography_manager = None
 
         self.metrics_calculator = PhysicalMetricsCalculator(fps=self.fps, smoothing_window=self.config['metrics']['speed_smoothing'])
         self.kalman_filters: Dict[int, KalmanSmoother] = {}
@@ -85,12 +119,22 @@ class FootballTracker:
         self.exporter = TrackingDataExporter(self.config['video']['output_path'])
         self.visualizer = PitchVisualizer()
 
-    def calibrate(self, video_path: str, interactive: bool = True):
-        cap = cv2.VideoCapture(video_path)
-        ret, frame = cap.read()
-        cap.release()
-        if not ret:
-            raise ValueError(f"Could not read video: {video_path}")
+        # Rotation statistics
+        self.rotation_stats = {
+            'total_frames': 0,
+            'rotating_frames': 0,
+            'stable_frames': 0,
+            'max_rotation_angle': 0.0,
+        }
+
+    def calibrate(self, video_path: str, frame: Optional[np.ndarray] = None, interactive: bool = True):
+        """Calibrate camera homography from video or provided frame."""
+        if frame is None:
+            cap = cv2.VideoCapture(video_path)
+            ret, frame = cap.read()
+            cap.release()
+            if not ret:
+                raise ValueError(f"Could not read video: {video_path}")
 
         if interactive:
             logger.info("Starting interactive calibration...")
@@ -99,13 +143,25 @@ class FootballTracker:
             result = HomographyEstimator().estimate_from_manual_points([], [])
 
         if result.is_valid:
-            self.transformer.set_homography(result.homography)
+            if self.rotation_enabled:
+                # Initialize rotation handling with base homography
+                pitch_mask = self.pitch_mask_detector.get_mask(frame)
+                self.transformer.set_base_homography(result.homography)
+                self.rotation_handler.initialize(frame, result.homography, pitch_mask)
+                self.homography_manager.initialize(frame, result.homography, pitch_mask)
+
+                # Set up dynamic homography provider
+                self.transformer.set_homography_provider(self.homography_manager.get_homography)
+            else:
+                self.transformer.set_homography(result.homography)
+
             logger.info(f"Calibration successful. Error: {result.reprojection_error:.2f}m")
         else:
             logger.error("Calibration failed!")
 
     def process_video(self, video_path: str, output_name: Optional[str] = None,
                      start_frame: int = 0, end_frame: Optional[int] = None, visualize: bool = False) -> List[Dict]:
+        """Process video with automatic rotation detection and compensation."""
         video_path = Path(video_path)
         output_name = output_name or video_path.stem
 
@@ -115,15 +171,23 @@ class FootballTracker:
             end_frame = total_frames
 
         logger.info(f"Processing {video_path.name}: frames {start_frame}-{end_frame}")
+        if self.rotation_enabled:
+            logger.info("Rotation handling enabled - will compensate for camera pan")
 
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         ret, first_frame = cap.read()
         if not ret:
             raise ValueError("Could not read first frame")
 
-        if self.transformer.H is None:
-            self.calibrate(str(video_path), interactive=True)
+        # Perform calibration if not already done
+        if self.rotation_enabled:
+            if not self.transformer.is_valid():
+                self.calibrate(str(video_path), frame=first_frame, interactive=True)
+        else:
+            if self.transformer.H is None:
+                self.calibrate(str(video_path), frame=first_frame, interactive=True)
 
+        # Fit team classifier on first frame
         pitch_mask = self.pitch_mask_detector.get_mask(first_frame)
         initial_detections = self.player_detector.detect(first_frame, pitch_mask)
         if len(initial_detections) >= 6:
@@ -140,6 +204,16 @@ class FootballTracker:
             ret, frame = cap.read()
             if not ret:
                 break
+
+            # Update homography for rotating camera
+            if self.rotation_enabled:
+                pitch_mask = self.pitch_mask_detector.get_mask(frame)
+                timestamp = frame_idx / self.fps
+                dyn_H = self.homography_manager.update(frame, frame_idx, timestamp, pitch_mask)
+
+                # Update rotation statistics
+                self._update_rotation_stats()
+
             record = self._process_frame(frame, frame_idx)
             frame_records.append(record)
             frame_idx += 1
@@ -147,6 +221,10 @@ class FootballTracker:
 
         pbar.close()
         cap.release()
+
+        # Log rotation statistics
+        if self.rotation_enabled:
+            self._log_rotation_stats()
 
         metrics = self._calculate_final_metrics()
         self.exporter.export_frame_data(frame_records, output_name, formats=self.config['output']['format'])
@@ -158,7 +236,36 @@ class FootballTracker:
         logger.info(f"Processing complete. {len(frame_records)} frames processed.")
         return frame_records
 
+    def _update_rotation_stats(self):
+        """Update rotation statistics."""
+        if self.homography_manager is None:
+            return
+
+        self.rotation_stats['total_frames'] += 1
+
+        if self.homography_manager.is_rotating():
+            self.rotation_stats['rotating_frames'] += 1
+        else:
+            self.rotation_stats['stable_frames'] += 1
+
+        angle = abs(self.homography_manager.get_rotation_angle())
+        if angle > self.rotation_stats['max_rotation_angle']:
+            self.rotation_stats['max_rotation_angle'] = angle
+
+    def _log_rotation_stats(self):
+        """Log rotation statistics summary."""
+        total = self.rotation_stats['total_frames']
+        if total == 0:
+            return
+
+        rotating_pct = 100 * self.rotation_stats['rotating_frames'] / total
+        stable_pct = 100 * self.rotation_stats['stable_frames'] / total
+
+        logger.info(f"Rotation stats: {rotating_pct:.1f}% rotating, {stable_pct:.1f}% stable")
+        logger.info(f"Max rotation angle: {self.rotation_stats['max_rotation_angle']:.1f}°")
+
     def _process_frame(self, frame: np.ndarray, frame_idx: int) -> Dict:
+        """Process a single frame."""
         timestamp = frame_idx / self.fps
         pitch_mask = self.pitch_mask_detector.get_mask(frame)
         player_detections = self.player_detector.detect(frame, pitch_mask)
@@ -169,7 +276,17 @@ class FootballTracker:
         player_records = []
         for track in tracks:
             pixel_pos = track.foot_position
-            world_pos = self.transformer.pixel_to_world(pixel_pos)
+
+            # Transform to world coordinates (automatically uses updated homography for rotating camera)
+            try:
+                world_pos = self.transformer.pixel_to_world(pixel_pos)
+            except ValueError:
+                # Homography not available, skip this track
+                continue
+
+            # Validate world position is within pitch bounds (with margin for rotation)
+            if not self._is_valid_world_position(world_pos):
+                continue
 
             if track.track_id not in self.kalman_filters:
                 self.kalman_filters[track.track_id] = KalmanSmoother(dt=1/self.fps)
@@ -198,11 +315,21 @@ class FootballTracker:
 
         ball_record = None
         if ball_detection:
-            ball_world = self.transformer.pixel_to_world(ball_detection.position)
-            ball_record = {'x': round(ball_world[0], 2), 'y': round(ball_world[1], 2),
-                          'is_interpolated': ball_detection.is_interpolated}
+            try:
+                ball_world = self.transformer.pixel_to_world(ball_detection.position)
+                if self._is_valid_world_position(ball_world, margin=10.0):
+                    ball_record = {'x': round(ball_world[0], 2), 'y': round(ball_world[1], 2),
+                                  'is_interpolated': ball_detection.is_interpolated}
+            except ValueError:
+                pass
 
         return create_frame_record(frame_idx, timestamp, player_records, ball_record)
+
+    def _is_valid_world_position(self, pos: tuple, margin: float = 5.0) -> bool:
+        """Check if world position is within valid pitch bounds."""
+        x, y = pos
+        # Pitch is 105m x 68m, allow some margin for edge cases
+        return (-margin <= x <= 105.0 + margin) and (-margin <= y <= 68.0 + margin)
 
     def _calculate_final_metrics(self) -> List[Dict]:
         metrics = []
@@ -248,9 +375,30 @@ def main():
     parser.add_argument("--start", type=int, default=0, help="Start frame")
     parser.add_argument("--end", type=int, help="End frame")
     parser.add_argument("--visualize", action="store_true", help="Generate visualizations")
+    parser.add_argument("--rotation", action="store_true", help="Enable rotation handling (overrides config)")
     args = parser.parse_args()
 
-    tracker = FootballTracker(args.config)
+    # Load config and potentially override rotation setting
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+
+    if args.rotation:
+        if 'rotation' not in config:
+            config['rotation'] = {}
+        config['rotation']['enabled'] = True
+
+        # Save modified config to temp file
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump(config, f)
+            temp_config = f.name
+
+        tracker = FootballTracker(temp_config)
+        import os
+        os.unlink(temp_config)
+    else:
+        tracker = FootballTracker(args.config)
+
     tracker.process_video(args.video, output_name=args.output, start_frame=args.start,
                          end_frame=args.end, visualize=args.visualize)
 

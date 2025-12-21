@@ -56,8 +56,8 @@ training:
     no_object: 0.1  # Background class
 
 data:
-  dataset: "soccernet_detection"
-  root_path: "data/training/soccernet_detection"
+  dataset: "soccernet_tracking"
+  root_path: "data/soccernet/tracking"
 
   # Additional annotation sources
   additional_datasets:

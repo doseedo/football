@@ -39,8 +39,8 @@ training:
     perspective: 0.1
 
 data:
-  dataset: "soccernet_calibration"  # soccernet_calibration, worldcup2014, custom
-  root_path: "data/training/soccernet"
+  dataset: "synthetic"  # soccernet_calibration, synthetic, custom
+  root_path: "data/soccernet"
   train_split: 0.8
   val_split: 0.1
   test_split: 0.1

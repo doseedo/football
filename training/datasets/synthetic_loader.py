@@ -501,11 +501,17 @@ class SyntheticHomographyDataset(Dataset):
         # Create visibility mask (all visible for synthetic)
         visibility = np.ones(len(pixel_kps))
 
+        # Pad keypoints to fixed size (29 keypoints as per config)
+        num_kps = len(pixel_kps)
+        max_keypoints = 29
+        padded_kps = np.zeros((max_keypoints, 3), dtype=np.float32)
+        padded_kps[:num_kps, :2] = pixel_kps
+        padded_kps[:num_kps, 2] = visibility
+
         return {
             'image': torch.from_numpy(img).permute(2, 0, 1).float() / 255.0,
-            'keypoints': torch.from_numpy(
-                np.hstack([pixel_kps, visibility[:, None]])
-            ).float(),
+            'keypoints': torch.from_numpy(padded_kps).float(),
+            'num_keypoints': torch.tensor(num_kps),
             'world_points': torch.from_numpy(self.world_keypoints).float(),
             'homography': torch.from_numpy(homography).float(),
         }

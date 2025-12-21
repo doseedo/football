@@ -5,7 +5,7 @@ model:
   name: "homography_keypoint_net"
   backbone: "resnet50"  # resnet34, resnet50, efficientnet_b0
   pretrained: true
-  num_keypoints: 29  # Standard soccer pitch keypoints
+  num_keypoints: 40  # SoccerNet extracts up to 40 keypoints from pitch lines
   heatmap_size: [64, 64]  # Output heatmap resolution
   feature_channels: 256
 
@@ -39,7 +39,7 @@ training:
     perspective: 0.1
 
 data:
-  dataset: "synthetic"  # soccernet_calibration, synthetic, custom
+  dataset: "soccernet_calibration"  # soccernet_calibration, synthetic, custom
   root_path: "data/soccernet/calibration"
   train_split: 0.8
   val_split: 0.1

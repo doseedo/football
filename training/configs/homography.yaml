@@ -62,7 +62,7 @@ checkpoints:
 
 logging:
   wandb:
-    enabled: true
+    enabled: false
     project: "football-tracking-homography"
     entity: null
     tags: ["homography", "keypoint", "calibration"]

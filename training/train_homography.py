@@ -303,14 +303,42 @@ class HomographyTrainer:
 
     def _generate_heatmaps(self, batch):
         """Generate ground truth heatmaps from keypoints."""
-        # Simplified - in practice, would generate Gaussian heatmaps
         B = batch['image'].shape[0]
         K = self.model.num_keypoints
         H, W = self.model.heatmap_size
 
         heatmaps = torch.zeros(B, K, H, W)
 
-        # TODO: Generate proper Gaussian heatmaps from keypoint locations
+        # Get keypoints from batch: shape (B, num_keypoints, 3) where 3 = (x, y, visibility)
+        keypoints = batch['keypoints']  # Already in pixel coords for target image size
+        num_kps = batch.get('num_keypoints', torch.full((B,), keypoints.shape[1]))
+
+        # Image size used for keypoints (from config)
+        img_h, img_w = 512, 512  # Default, should match config
+
+        # Gaussian sigma for heatmap
+        sigma = 2.0
+
+        # Create coordinate grids
+        y_grid = torch.arange(H).float().view(H, 1).expand(H, W)
+        x_grid = torch.arange(W).float().view(1, W).expand(H, W)
+
+        for b in range(B):
+            n_kps = int(num_kps[b].item()) if isinstance(num_kps, torch.Tensor) else num_kps
+            for k in range(min(n_kps, K)):
+                kp = keypoints[b, k]
+                x, y, vis = kp[0].item(), kp[1].item(), kp[2].item()
+
+                if vis < 0.5 or (x == 0 and y == 0):
+                    continue
+
+                # Scale keypoint coords to heatmap size
+                hm_x = x * W / img_w
+                hm_y = y * H / img_h
+
+                # Generate Gaussian heatmap
+                gaussian = torch.exp(-((x_grid - hm_x)**2 + (y_grid - hm_y)**2) / (2 * sigma**2))
+                heatmaps[b, k] = gaussian
 
         return heatmaps
 

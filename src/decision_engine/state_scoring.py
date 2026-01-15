@@ -312,6 +312,29 @@ class GameStateEvaluator:
 
         return np.clip(score, 0.0, 1.0)
 
+    def _score_proximity_simple(self, pos: Position) -> float:
+        """Simple proximity score for a position (no state needed)."""
+        dist = self.geometry.distance_to_attacking_goal(pos)
+
+        if dist <= self.optimal_shooting_distance:
+            return 1.0
+        elif dist <= self.max_shooting_distance:
+            return 0.8 - 0.3 * (dist - self.optimal_shooting_distance) / (
+                self.max_shooting_distance - self.optimal_shooting_distance
+            )
+        elif dist <= HALF_LENGTH:
+            return 0.5 - 0.3 * (dist - self.max_shooting_distance) / (
+                HALF_LENGTH - self.max_shooting_distance
+            )
+        else:
+            return 0.2 * (1.0 - (dist - HALF_LENGTH) / HALF_LENGTH)
+
+    def _score_angle_simple(self, pos: Position) -> float:
+        """Simple angle score for a position (no state needed)."""
+        angle = self.geometry.angle_to_goal(pos, attacking=True)
+        max_practical_angle = 0.4
+        return min(1.0, angle / max_practical_angle)
+
     def _score_actions(self, state: GameState) -> float:
         """
         Score based on available forward actions.
@@ -449,16 +472,10 @@ class GameStateEvaluator:
 
         success_prob = dist_factor * (1 - min(interception_risk, 0.8))
 
-        # Value if successful
-        # Simulate state after pass
-        hypothetical_state = GameState(
-            ball_position=target,
-            ball_carrier=target_player,
-            attackers=state.attackers,
-            defenders=state.defenders,
-        )
-        hypothetical_evaluated = self.evaluate(hypothetical_state)
-        value_if_success = hypothetical_evaluated.score.total * value_multiplier
+        # Value if successful - use simple position-based score (no recursion)
+        proximity_score = self._score_proximity_simple(target)
+        angle_score = self._score_angle_simple(target)
+        value_if_success = (0.6 * proximity_score + 0.4 * angle_score) * value_multiplier
 
         # Risk if intercepted
         risk_if_failure = 0.4

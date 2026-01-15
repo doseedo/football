@@ -290,6 +290,39 @@ function canDefenderIntercept(def, from, to, passDist) {
     };
 }
 
+// Quick xG estimate for a receiver position (simplified)
+function evaluateReceiverShotPotential(receiverPos, defenders) {
+    const distToGoal = dist(receiverPos, GOAL_POS);
+
+    // No shot potential if too far
+    if (distToGoal > 25) return 0;
+
+    // Base xG from distance
+    let xG;
+    if (distToGoal < 5) xG = 0.60;
+    else if (distToGoal < 8) xG = 0.40;
+    else if (distToGoal < 11) xG = 0.30;
+    else if (distToGoal < 16) xG = 0.18;
+    else if (distToGoal < 20) xG = 0.08;
+    else xG = 0.03;
+
+    // Angle factor
+    const angle = Math.abs(Math.atan2(receiverPos.y, GOAL_POS.x - receiverPos.x));
+    if (angle > 0.8) xG *= 0.3;
+    else if (angle > 0.5) xG *= 0.5;
+    else if (angle > 0.3) xG *= 0.75;
+
+    // Defender pressure
+    for (const def of defenders) {
+        const defDist = dist(receiverPos, def);
+        if (defDist < 2) xG *= 0.4;
+        else if (defDist < 4) xG *= 0.6;
+        else if (defDist < 6) xG *= 0.8;
+    }
+
+    return xG;
+}
+
 // Evaluate pass to a target player - WITH RANGE, FACING & BALL TRAVEL TIME
 function evaluatePass(state, targetPlayer) {
     const carrier = state.attackers.find(a => a.id === state.carrierId);
@@ -305,10 +338,25 @@ function evaluatePass(state, targetPlayer) {
     }
 
     // CHECK 2: Facing direction - can only pass in front
+    // EXCEPTIONS: Short passes and cutbacks to better positions are always allowed
     const facingAngle = getCarrierFacing(state);
-    if (!isInFacingCone(carrier, to, facingAngle)) {
-        return null; // Can't pass behind
+    const inFacingCone = isInFacingCone(carrier, to, facingAngle);
+
+    // Allow pass if:
+    // 1. In facing cone (normal pass)
+    // 2. Short pass < 10m (can just tap it)
+    // 3. Receiver is closer to goal (cutback/square ball)
+    // 4. In the attacking third (final third creativity)
+    const isShortPass = passDist < 10;
+    const receiverCloserToGoal = dist(to, GOAL_POS) < dist(from, GOAL_POS);
+    const inAttackingThird = from.x > HALF_LENGTH - 35; // Last 35m
+
+    if (!inFacingCone && !isShortPass && !receiverCloserToGoal && !inAttackingThird) {
+        return null; // Can't pass behind unless exceptions apply
     }
+
+    // Penalty for passing outside facing cone (harder to execute)
+    const facingPenalty = inFacingCone ? 1.0 : 0.85;
 
     // Calculate ball travel time
     const ballTravelTime = passDist / BALL_SPEED_GROUND;
@@ -357,11 +405,17 @@ function evaluatePass(state, targetPlayer) {
     const pressurePenalty = receiverSpace < 4 ? 0.15 : 0;
     interceptionRisk += pressurePenalty;
 
-    const successProb = Math.max(0.1, timeFactor * spaceFactor * (1 - Math.min(interceptionRisk, 0.85)));
+    const successProb = Math.max(0.1, timeFactor * spaceFactor * facingPenalty * (1 - Math.min(interceptionRisk, 0.85)));
 
     const distToGoal = dist(to, GOAL_POS);
     const positionValue = Math.max(0.1, 1 - distToGoal / 60);
-    const valueIfSuccess = positionValue * progressBonus * freeManBonus;
+
+    // BIG BONUS: If receiver would have a good shot, this pass is very valuable
+    // Simulate what xG the receiver would have
+    const receiverShotXG = evaluateReceiverShotPotential(to, state.defenders);
+    const shotCreationBonus = receiverShotXG > 0.15 ? 1.5 : (receiverShotXG > 0.08 ? 1.2 : 1.0);
+
+    const valueIfSuccess = positionValue * progressBonus * freeManBonus * shotCreationBonus;
     const riskIfFail = receiverSpace < 5 ? 0.5 : 0.35;
 
     const expectedValue = successProb * valueIfSuccess - (1 - successProb) * riskIfFail;
@@ -379,7 +433,9 @@ function evaluatePass(state, targetPlayer) {
         isProgressive: progression > 0.1,
         distance: passDist.toFixed(1),
         travelTime: ballTravelTime.toFixed(2),
-        interceptors: potentialInterceptors.length
+        interceptors: potentialInterceptors.length,
+        receiverXG: (receiverShotXG * 100).toFixed(1), // What xG receiver would have
+        isCutback: !inFacingCone && receiverCloserToGoal
     };
 }
 
@@ -1304,9 +1360,17 @@ function updateActionList(frame) {
     list.innerHTML = frame.actions.map((a, i) => {
         let tags = '';
         if (a.type === 'pass') {
+            // CUTBACK indicator
+            if (a.isCutback) {
+                tags += '<span style="background:#e91e63;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;font-weight:bold;">CUTBACK</span>';
+            }
+            // Show receiver's shot potential if significant
+            if (a.receiverXG && parseFloat(a.receiverXG) > 5) {
+                tags += `<span style="background:#f1c40f;color:#1a1a2e;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;font-weight:bold;">RCV xG ${a.receiverXG}%</span>`;
+            }
             // LOOKAHEAD: Show if pass creates a shot opportunity
             if (a.createsShot) {
-                tags += `<span style="background:#f1c40f;color:#1a1a2e;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;font-weight:bold;">→SHOT ${a.shotXG}%</span>`;
+                tags += `<span style="background:#9b59b6;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">→SHOT ${a.shotXG}%</span>`;
             } else if (a.nextBestAction) {
                 tags += `<span style="background:#555;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">→${a.nextBestAction}</span>`;
             }

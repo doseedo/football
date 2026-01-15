@@ -516,7 +516,146 @@ function evaluateDribble(state) {
     };
 }
 
-// Find all available actions
+// ============================================
+// MULTI-STEP LOOKAHEAD - Find passing sequences
+// ============================================
+
+const LOOKAHEAD_DEPTH = 2; // How many steps ahead to look
+const FUTURE_DISCOUNT = 0.85; // Discount factor for future value
+
+// Simulate state after successful pass (without random movement)
+function simulatePassSuccess(state, passAction) {
+    const newState = JSON.parse(JSON.stringify(state));
+    newState.ball = { x: passAction.target.x, y: passAction.target.y };
+    newState.carrierId = passAction.targetPlayer;
+    return newState;
+}
+
+// Simulate state after successful dribble
+function simulateDribbleSuccess(state, dribbleAction) {
+    const newState = JSON.parse(JSON.stringify(state));
+    newState.ball = { x: dribbleAction.target.x, y: dribbleAction.target.y };
+    // Move carrier to new position
+    const carrierIdx = newState.attackers.findIndex(a => a.id === state.carrierId);
+    if (carrierIdx >= 0) {
+        newState.attackers[carrierIdx].x = dribbleAction.target.x;
+        newState.attackers[carrierIdx].y = dribbleAction.target.y;
+    }
+    return newState;
+}
+
+// Evaluate position value (how good is this state for attacking team)
+function evaluatePositionValue(state) {
+    const ballDistToGoal = dist(state.ball, GOAL_POS);
+
+    // Base value from ball position
+    let value = Math.max(0, 1 - ballDistToGoal / 60);
+
+    // Bonus for ball carrier having space
+    const carrier = state.attackers.find(a => a.id === state.carrierId);
+    if (carrier) {
+        const carrierSpace = getPlayerSpace(carrier, state.defenders);
+        if (carrierSpace > 10) value += 0.15;
+        else if (carrierSpace > 6) value += 0.08;
+    }
+
+    // Check if a shot opportunity exists
+    const shotEval = evaluateShot(state);
+    if (shotEval && shotEval.xG > 10) { // >10% xG
+        value = Math.max(value, parseFloat(shotEval.xG) / 100);
+    }
+
+    return value;
+}
+
+// Recursive lookahead evaluation
+function evaluateWithLookahead(state, action, depth) {
+    if (depth === 0) {
+        // Base case: just return immediate expected value
+        return action.expectedValue;
+    }
+
+    // For shots, no lookahead needed - it's a terminal action
+    if (action.type === 'shot') {
+        return action.expectedValue;
+    }
+
+    // Calculate future value if action succeeds
+    let futureValue = 0;
+    let futureAction = null;
+
+    if (action.type === 'pass') {
+        const futureState = simulatePassSuccess(state, action);
+
+        // Find best action from future state (with reduced depth)
+        const futureActions = findActionsBasic(futureState);
+        if (futureActions.length > 0) {
+            // Evaluate each future action with lookahead
+            let bestFutureValue = -Infinity;
+            for (const fa of futureActions) {
+                const faValue = evaluateWithLookahead(futureState, fa, depth - 1);
+                if (faValue > bestFutureValue) {
+                    bestFutureValue = faValue;
+                    futureAction = fa;
+                }
+            }
+            futureValue = bestFutureValue;
+        } else {
+            // No actions available, use position value
+            futureValue = evaluatePositionValue(futureState);
+        }
+    } else if (action.type === 'dribble') {
+        const futureState = simulateDribbleSuccess(state, action);
+        const futureActions = findActionsBasic(futureState);
+        if (futureActions.length > 0) {
+            let bestFutureValue = -Infinity;
+            for (const fa of futureActions) {
+                const faValue = evaluateWithLookahead(futureState, fa, depth - 1);
+                if (faValue > bestFutureValue) {
+                    bestFutureValue = faValue;
+                    futureAction = fa;
+                }
+            }
+            futureValue = bestFutureValue;
+        } else {
+            futureValue = evaluatePositionValue(futureState);
+        }
+    }
+
+    // Combined value: probability-weighted outcome
+    // Success: immediate value + discounted future value
+    // Failure: -riskIfFail (possession loss)
+    const successValue = action.valueIfSuccess + FUTURE_DISCOUNT * futureValue;
+    const failValue = -action.riskIfFail;
+
+    const lookaheadEV = action.successProb * successValue + (1 - action.successProb) * failValue;
+
+    return lookaheadEV;
+}
+
+// Basic action finding without lookahead (to avoid infinite recursion)
+function findActionsBasic(state) {
+    const actions = [];
+
+    for (const attacker of state.attackers) {
+        if (attacker.id === state.carrierId) continue;
+        const passAction = evaluatePass(state, attacker);
+        if (passAction && passAction.expectedValue > -0.5) {
+            actions.push(passAction);
+        }
+    }
+
+    const shot = evaluateShot(state);
+    if (shot) actions.push(shot);
+
+    const dribble = evaluateDribble(state);
+    if (dribble && dribble.expectedValue > -0.3) actions.push(dribble);
+
+    actions.sort((a, b) => b.expectedValue - a.expectedValue);
+    return actions;
+}
+
+// Find all available actions WITH LOOKAHEAD
 function findActions(state) {
     const actions = [];
 
@@ -525,19 +664,46 @@ function findActions(state) {
         if (attacker.id === state.carrierId) continue;
         const passAction = evaluatePass(state, attacker);
         if (passAction && passAction.expectedValue > -0.3) {
+            // Calculate lookahead value
+            const lookaheadValue = evaluateWithLookahead(state, passAction, LOOKAHEAD_DEPTH);
+            passAction.lookaheadValue = lookaheadValue;
+            passAction.originalEV = passAction.expectedValue;
+            passAction.expectedValue = lookaheadValue; // Use lookahead for sorting
+
+            // Find what the receiver could do next
+            const futureState = simulatePassSuccess(state, passAction);
+            const futureActions = findActionsBasic(futureState);
+            if (futureActions.length > 0) {
+                passAction.nextBestAction = futureActions[0].type;
+                if (futureActions[0].type === 'shot') {
+                    passAction.createsShot = true;
+                    passAction.shotXG = futureActions[0].xG;
+                }
+            }
+
             actions.push(passAction);
         }
     }
 
-    // Shot on goal
+    // Shot on goal - no lookahead needed
     const shot = evaluateShot(state);
-    if (shot) actions.push(shot);
+    if (shot) {
+        shot.lookaheadValue = shot.expectedValue;
+        shot.originalEV = shot.expectedValue;
+        actions.push(shot);
+    }
 
-    // Dribble
+    // Dribble with lookahead
     const dribble = evaluateDribble(state);
-    if (dribble && dribble.expectedValue > -0.2) actions.push(dribble);
+    if (dribble && dribble.expectedValue > -0.2) {
+        const lookaheadValue = evaluateWithLookahead(state, dribble, LOOKAHEAD_DEPTH);
+        dribble.lookaheadValue = lookaheadValue;
+        dribble.originalEV = dribble.expectedValue;
+        dribble.expectedValue = lookaheadValue;
+        actions.push(dribble);
+    }
 
-    // Sort by expected value
+    // Sort by lookahead expected value
     actions.sort((a, b) => b.expectedValue - a.expectedValue);
 
     return actions;
@@ -1138,6 +1304,12 @@ function updateActionList(frame) {
     list.innerHTML = frame.actions.map((a, i) => {
         let tags = '';
         if (a.type === 'pass') {
+            // LOOKAHEAD: Show if pass creates a shot opportunity
+            if (a.createsShot) {
+                tags += `<span style="background:#f1c40f;color:#1a1a2e;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;font-weight:bold;">→SHOT ${a.shotXG}%</span>`;
+            } else if (a.nextBestAction) {
+                tags += `<span style="background:#555;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">→${a.nextBestAction}</span>`;
+            }
             if (a.isFreeMan) tags += '<span style="background:#27ae60;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">FREE</span>';
             if (a.isProgressive) tags += '<span style="background:#3498db;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">PROG</span>';
             if (a.receiverSpace && parseFloat(a.receiverSpace) < 5) tags += '<span style="background:#e74c3c;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;">TIGHT</span>';
@@ -1154,7 +1326,7 @@ function updateActionList(frame) {
 
         let info = '';
         if (a.type === 'pass') {
-            info = `${a.targetPlayer} - ${(a.successProb * 100).toFixed(0)}% (${a.distance}m, ${a.travelTime}s)`;
+            info = `${a.targetPlayer} - ${(a.successProb * 100).toFixed(0)}% (${a.distance}m)`;
             if (a.interceptors > 0) {
                 tags += `<span style="background:#e67e22;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">${a.interceptors} DEF</span>`;
             }

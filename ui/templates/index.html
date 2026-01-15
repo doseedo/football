@@ -720,13 +720,31 @@
                 const pos = pitchToCanvas(zone.x, zone.y);
                 const size = zone.width * scale;
 
-                // Color based on xG (red = high, blue = low)
-                const intensity = Math.min(1, zone.xg / 0.3);
-                const r = Math.floor(255 * intensity);
-                const g = Math.floor(50 * (1 - intensity));
-                const b = Math.floor(100 * (1 - intensity));
+                // Color gradient: purple (low) -> blue -> cyan -> yellow -> red (high)
+                const xg = zone.xg;
+                let r, g, b;
 
-                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.4)`;
+                if (xg < 0.02) {
+                    // Very low - dark purple
+                    r = 60; g = 20; b = 80;
+                } else if (xg < 0.05) {
+                    // Low - blue
+                    r = 30; g = 60; b = 200;
+                } else if (xg < 0.10) {
+                    // Medium-low - cyan
+                    r = 0; g = 180; b = 220;
+                } else if (xg < 0.15) {
+                    // Medium - yellow
+                    r = 255; g = 220; b = 0;
+                } else if (xg < 0.25) {
+                    // Medium-high - orange
+                    r = 255; g = 140; b = 0;
+                } else {
+                    // High - bright red
+                    r = 255; g = 40; b = 40;
+                }
+
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.6)`;
                 ctx.fillRect(pos.x - size/2, pos.y - size/2, size, size);
             }
         }

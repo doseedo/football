@@ -530,17 +530,33 @@ function evaluateShot(state) {
     // 5. FINAL xG calculation
     const xG = Math.min(0.95, Math.max(0.01, baseXG * angleFactor * defenderPressure));
 
-    // Expected value: xG * 1 (goal value) - (1-xG) * possession loss risk
-    const possessionLossRisk = 0.25; // Losing ball on missed shot
-    const expectedValue = xG - (1 - xG) * possessionLossRisk;
+    // Expected value calculation
+    // A GOAL is the ultimate objective - worth much more than other actions
+    // When you have a good chance, TAKE IT rather than trying to improve
+    const GOAL_VALUE = 2.0; // Goals are very valuable
+
+    // Possession loss risk depends on situation
+    // If you're unmarked and miss, you often get a corner or rebound
+    // If defenders are close, a block might lead to counter-attack
+    let possessionLossRisk = 0.3;
+    if (defendersClose === 0) possessionLossRisk = 0.1; // Miss goes out, probably corner
+    else if (nearestDefenderDist > 5) possessionLossRisk = 0.15;
+
+    // Expected value heavily rewards good xG chances
+    const expectedValue = xG * GOAL_VALUE - (1 - xG) * possessionLossRisk;
+
+    // TAKE THE SHOT bonus: if xG is above threshold, boost EV further
+    // This prevents "dribble closer" when you already have a good chance
+    const takeTheShotBonus = xG > 0.25 ? 0.3 : (xG > 0.15 ? 0.15 : 0);
+    const finalExpectedValue = expectedValue + takeTheShotBonus;
 
     return {
         type: 'shot',
         target: GOAL_POS,
         targetPlayer: null,
         successProb: xG,
-        expectedValue,
-        valueIfSuccess: 1.0,
+        expectedValue: finalExpectedValue,
+        valueIfSuccess: GOAL_VALUE,
         riskIfFail: possessionLossRisk,
         distToGoal: distToGoal.toFixed(1),
         inBox: inPenaltyBox,

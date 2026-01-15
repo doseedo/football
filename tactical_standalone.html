@@ -181,6 +181,11 @@ const GOAL_WIDTH = 7.32; // Standard goal width
 const MAX_PASS_DISTANCE = 35; // Max pass distance in meters
 const FACING_CONE_ANGLE = Math.PI * 0.75; // 135 degrees - can pass within this cone
 
+// Ball physics
+const BALL_SPEED_GROUND = 18; // m/s for ground pass
+const BALL_SPEED_LOFTED = 22; // m/s for lofted pass
+const PLAYER_SPRINT_SPEED = 8; // m/s defender sprint speed
+
 // Utility functions
 function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
 function norm(v) { return Math.sqrt(v.x * v.x + v.y * v.y); }
@@ -250,7 +255,42 @@ function getCarrierFacing(state) {
     return angleBetween(carrier, GOAL_POS);
 }
 
-// Evaluate pass to a target player - WITH RANGE & FACING
+// Calculate ball travel time and if defender can intercept
+function canDefenderIntercept(def, from, to, passDist) {
+    // Ball travel time
+    const ballTravelTime = passDist / BALL_SPEED_GROUND;
+
+    // Find closest point on pass line to defender
+    const ab = { x: to.x - from.x, y: to.y - from.y };
+    const ap = { x: def.x - from.x, y: def.y - from.y };
+    const abLen = norm(ab);
+    const t = Math.max(0, Math.min(1, dot(ap, ab) / (abLen * abLen)));
+    const interceptPoint = { x: from.x + t * ab.x, y: from.y + t * ab.y };
+
+    // Time for ball to reach intercept point
+    const ballDistToIntercept = dist(from, interceptPoint);
+    const ballTimeToIntercept = ballDistToIntercept / BALL_SPEED_GROUND;
+
+    // Distance defender needs to run to intercept point
+    const defDistToIntercept = dist(def, interceptPoint);
+
+    // Time for defender to reach intercept point (with reaction time)
+    const reactionTime = 0.3; // 300ms reaction delay
+    const defTimeToIntercept = reactionTime + defDistToIntercept / PLAYER_SPRINT_SPEED;
+
+    // Can intercept if defender arrives before or at same time as ball
+    const canIntercept = defTimeToIntercept <= ballTimeToIntercept + 0.2; // 0.2s margin
+
+    return {
+        canIntercept,
+        interceptPoint,
+        ballTime: ballTimeToIntercept,
+        defTime: defTimeToIntercept,
+        margin: ballTimeToIntercept - defTimeToIntercept
+    };
+}
+
+// Evaluate pass to a target player - WITH RANGE, FACING & BALL TRAVEL TIME
 function evaluatePass(state, targetPlayer) {
     const carrier = state.attackers.find(a => a.id === state.carrierId);
     if (!carrier) return null;
@@ -270,8 +310,11 @@ function evaluatePass(state, targetPlayer) {
         return null; // Can't pass behind
     }
 
-    // 1. Distance factor: short passes more reliable
-    const distFactor = Math.max(0.3, 1 - passDist / MAX_PASS_DISTANCE);
+    // Calculate ball travel time
+    const ballTravelTime = passDist / BALL_SPEED_GROUND;
+
+    // 1. Distance/time factor: longer passes = more time for defenders
+    const timeFactor = Math.max(0.3, 1 - ballTravelTime / 2.5); // 2.5s max reasonable pass time
 
     // 2. Receiver space - crucial factor
     const receiverSpace = getPlayerSpace(to, state.defenders);
@@ -290,24 +333,31 @@ function evaluatePass(state, targetPlayer) {
     const isFreeMan = freeManInfo.player && freeManInfo.player.id === targetPlayer.id;
     const freeManBonus = isFreeMan ? 1.15 : 1.0;
 
-    // 5. Interception risk
+    // 5. Interception risk - based on ball travel time and defender positions
     let interceptionRisk = 0;
-    for (const def of state.defenders) {
-        const perpDist = pointToSegmentDist(def, from, to);
-        const defToFrom = dist(def, from);
-        const defToTo = dist(def, to);
-        const alongPass = defToFrom < passDist && defToTo < passDist;
+    let potentialInterceptors = [];
 
-        if (perpDist < 2) interceptionRisk += alongPass ? 0.45 : 0.30;
-        else if (perpDist < 4) interceptionRisk += alongPass ? 0.20 : 0.12;
-        else if (perpDist < 6) interceptionRisk += 0.05;
+    for (const def of state.defenders) {
+        const intercept = canDefenderIntercept(def, from, to, passDist);
+
+        if (intercept.canIntercept) {
+            // Defender can reach the ball in time
+            const urgency = Math.max(0, 0.5 - intercept.margin); // Higher if close race
+            interceptionRisk += 0.3 + urgency;
+            potentialInterceptors.push({ def, ...intercept });
+        } else {
+            // Even if can't intercept, nearby defenders are a threat
+            const perpDist = pointToSegmentDist(def, from, to);
+            if (perpDist < 3) interceptionRisk += 0.1;
+            else if (perpDist < 5) interceptionRisk += 0.05;
+        }
     }
 
     // 6. Passing into pressure penalty
     const pressurePenalty = receiverSpace < 4 ? 0.15 : 0;
     interceptionRisk += pressurePenalty;
 
-    const successProb = Math.max(0.1, distFactor * spaceFactor * (1 - Math.min(interceptionRisk, 0.85)));
+    const successProb = Math.max(0.1, timeFactor * spaceFactor * (1 - Math.min(interceptionRisk, 0.85)));
 
     const distToGoal = dist(to, GOAL_POS);
     const positionValue = Math.max(0.1, 1 - distToGoal / 60);
@@ -327,7 +377,9 @@ function evaluatePass(state, targetPlayer) {
         receiverSpace: receiverSpace.toFixed(1),
         isFreeMan,
         isProgressive: progression > 0.1,
-        distance: passDist.toFixed(1)
+        distance: passDist.toFixed(1),
+        travelTime: ballTravelTime.toFixed(2),
+        interceptors: potentialInterceptors.length
     };
 }
 
@@ -471,17 +523,75 @@ function executeAction(state, action) {
             result = 'success';
             message = `Pass to ${action.targetPlayer} completed`;
         } else {
-            // Interception - ball goes to nearest defender
-            let nearestDef = state.defenders[0];
-            let minDist = Infinity;
+            // REALISTIC FAILURE - ball lands along pass path or nearby
+
+            // Find where along the pass the ball was intercepted
+            const from = state.ball;
+            const to = action.target;
+            const passDist = dist(from, to);
+
+            // Find the defender who intercepted
+            let interceptor = null;
+            let interceptPoint = null;
+            let bestInterceptDist = Infinity;
+
             for (const def of state.defenders) {
-                const d = pointToSegmentDist(def, state.ball, action.target);
-                if (d < minDist) { minDist = d; nearestDef = def; }
+                const intercept = canDefenderIntercept(def, from, to, passDist);
+                if (intercept.canIntercept) {
+                    const d = dist(def, intercept.interceptPoint);
+                    if (d < bestInterceptDist) {
+                        bestInterceptDist = d;
+                        interceptor = def;
+                        interceptPoint = intercept.interceptPoint;
+                    }
+                }
             }
-            newState.ball = { x: nearestDef.x, y: nearestDef.y };
-            newState.carrierId = null;
-            result = 'intercepted';
-            message = `Pass intercepted by ${nearestDef.id}`;
+
+            // If no clear interceptor, use closest defender to pass line
+            if (!interceptor) {
+                let minPerpDist = Infinity;
+                for (const def of state.defenders) {
+                    const perpDist = pointToSegmentDist(def, from, to);
+                    if (perpDist < minPerpDist) {
+                        minPerpDist = perpDist;
+                        interceptor = def;
+                        // Calculate intercept point on pass line
+                        const ab = { x: to.x - from.x, y: to.y - from.y };
+                        const ap = { x: def.x - from.x, y: def.y - from.y };
+                        const abLen = norm(ab);
+                        const t = Math.max(0.1, Math.min(0.9, dot(ap, ab) / (abLen * abLen)));
+                        interceptPoint = { x: from.x + t * ab.x, y: from.y + t * ab.y };
+                    }
+                }
+            }
+
+            // Ball lands in a zone around the intercept point
+            // Add some randomness to represent deflections, bobbles, etc.
+            const scatter = 2 + Math.random() * 3; // 2-5m scatter
+            const scatterAngle = Math.random() * Math.PI * 2;
+            const landingX = interceptPoint.x + Math.cos(scatterAngle) * scatter;
+            const landingY = interceptPoint.y + Math.sin(scatterAngle) * scatter;
+
+            // Clamp to pitch bounds
+            newState.ball = {
+                x: Math.max(-HALF_LENGTH + 2, Math.min(HALF_LENGTH - 2, landingX)),
+                y: Math.max(-HALF_WIDTH + 2, Math.min(HALF_WIDTH - 2, landingY))
+            };
+
+            // Defender gains possession if close enough to landing spot
+            const defDistToLanding = dist(interceptor, newState.ball);
+            if (defDistToLanding < 4) {
+                // Defender controls the ball
+                newState.ball = { x: interceptor.x, y: interceptor.y };
+                newState.carrierId = null; // Possession lost
+                result = 'intercepted';
+                message = `Pass intercepted by ${interceptor.id}`;
+            } else {
+                // Loose ball - 50/50 situation
+                newState.carrierId = null;
+                result = 'intercepted';
+                message = `Pass cut out - loose ball near ${interceptor.id}`;
+            }
         }
     } else if (action.type === 'shot') {
         if (success) {
@@ -489,10 +599,33 @@ function executeAction(state, action) {
             result = 'goal';
             message = 'GOAL!';
         } else {
-            newState.ball = { x: HALF_LENGTH - 5, y: (Math.random() - 0.5) * 10 };
+            // Shot failure - ball goes to various places
+            const failType = Math.random();
+            if (failType < 0.4) {
+                // Saved by keeper - ball near goal
+                newState.ball = {
+                    x: HALF_LENGTH - 3 - Math.random() * 5,
+                    y: (Math.random() - 0.5) * 12
+                };
+                message = 'Shot saved!';
+            } else if (failType < 0.7) {
+                // Wide/over - out for goal kick area
+                newState.ball = {
+                    x: HALF_LENGTH - 8,
+                    y: (Math.random() - 0.5) * 20
+                };
+                message = 'Shot wide!';
+            } else {
+                // Blocked by defender
+                const blocker = state.defenders.find(d => d.x > state.ball.x) || state.defenders[0];
+                newState.ball = {
+                    x: blocker.x + (Math.random() - 0.5) * 6,
+                    y: blocker.y + (Math.random() - 0.5) * 6
+                };
+                message = `Shot blocked by ${blocker.id}!`;
+            }
             newState.carrierId = null;
             result = 'missed';
-            message = 'Shot saved/missed';
         }
     } else if (action.type === 'dribble') {
         if (success) {
@@ -981,7 +1114,10 @@ function updateActionList(frame) {
 
         let info = '';
         if (a.type === 'pass') {
-            info = `${a.targetPlayer} - ${(a.successProb * 100).toFixed(0)}% (${a.distance}m, space: ${a.receiverSpace}m)`;
+            info = `${a.targetPlayer} - ${(a.successProb * 100).toFixed(0)}% (${a.distance}m, ${a.travelTime}s)`;
+            if (a.interceptors > 0) {
+                tags += `<span style="background:#e67e22;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">${a.interceptors} DEF</span>`;
+            }
         } else if (a.type === 'shot') {
             info = `GOAL - ${(a.successProb * 100).toFixed(0)}% (${a.distToGoal}m out)`;
         } else {

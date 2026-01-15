@@ -169,17 +169,35 @@
 
 <script>
 // ============================================
-// DECISION ENGINE v2 - Smarter Passes & Movement
+// DECISION ENGINE v3 - Pass Range, Facing, Shots
 // ============================================
 
 const PITCH_LENGTH = 105, PITCH_WIDTH = 68;
 const HALF_LENGTH = 52.5, HALF_WIDTH = 34;
 const GOAL_POS = { x: HALF_LENGTH, y: 0 };
+const GOAL_WIDTH = 7.32; // Standard goal width
+
+// Pass range limits
+const MAX_PASS_DISTANCE = 35; // Max pass distance in meters
+const FACING_CONE_ANGLE = Math.PI * 0.75; // 135 degrees - can pass within this cone
 
 // Utility functions
 function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
 function norm(v) { return Math.sqrt(v.x * v.x + v.y * v.y); }
 function dot(a, b) { return a.x * b.x + a.y * b.y; }
+
+// Get angle between two points
+function angleBetween(from, to) {
+    return Math.atan2(to.y - from.y, to.x - from.x);
+}
+
+// Check if target is within facing cone
+function isInFacingCone(carrier, target, facingAngle) {
+    const angleToTarget = angleBetween(carrier, target);
+    let angleDiff = Math.abs(angleToTarget - facingAngle);
+    if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+    return angleDiff <= FACING_CONE_ANGLE / 2;
+}
 
 // Point to line segment distance
 function pointToSegmentDist(p, a, b) {
@@ -221,40 +239,61 @@ function findFreeMan(attackers, defenders, carrierId) {
 function progressiveValue(from, to) {
     const fromGoalDist = dist(from, GOAL_POS);
     const toGoalDist = dist(to, GOAL_POS);
-    return (fromGoalDist - toGoalDist) / fromGoalDist; // 0-1, higher = more progressive
+    return (fromGoalDist - toGoalDist) / fromGoalDist;
 }
 
-// Evaluate pass to a target player - IMPROVED
+// Get carrier's facing direction (toward goal by default, or toward ball movement)
+function getCarrierFacing(state) {
+    const carrier = state.attackers.find(a => a.id === state.carrierId);
+    if (!carrier) return 0;
+    // Default: facing toward goal
+    return angleBetween(carrier, GOAL_POS);
+}
+
+// Evaluate pass to a target player - WITH RANGE & FACING
 function evaluatePass(state, targetPlayer) {
+    const carrier = state.attackers.find(a => a.id === state.carrierId);
+    if (!carrier) return null;
+
     const from = state.ball;
     const to = targetPlayer;
     const passDist = dist(from, to);
 
+    // CHECK 1: Pass distance limit
+    if (passDist > MAX_PASS_DISTANCE) {
+        return null; // Too far to pass
+    }
+
+    // CHECK 2: Facing direction - can only pass in front
+    const facingAngle = getCarrierFacing(state);
+    if (!isInFacingCone(carrier, to, facingAngle)) {
+        return null; // Can't pass behind
+    }
+
     // 1. Distance factor: short passes more reliable
-    const distFactor = Math.max(0.3, 1 - passDist / 50);
+    const distFactor = Math.max(0.3, 1 - passDist / MAX_PASS_DISTANCE);
 
     // 2. Receiver space - crucial factor
     const receiverSpace = getPlayerSpace(to, state.defenders);
     let spaceFactor = 1.0;
-    if (receiverSpace < 3) spaceFactor = 0.4;       // Very tight
-    else if (receiverSpace < 5) spaceFactor = 0.6;  // Under pressure
-    else if (receiverSpace < 8) spaceFactor = 0.8;  // Some space
-    else if (receiverSpace > 12) spaceFactor = 1.2; // Lots of space (bonus)
+    if (receiverSpace < 3) spaceFactor = 0.4;
+    else if (receiverSpace < 5) spaceFactor = 0.6;
+    else if (receiverSpace < 8) spaceFactor = 0.8;
+    else if (receiverSpace > 12) spaceFactor = 1.2;
 
     // 3. Progressive pass bonus
     const progression = progressiveValue(from, to);
-    const progressBonus = progression > 0.1 ? 1 + progression * 0.5 : 0.8; // Up to 1.5x for very progressive
+    const progressBonus = progression > 0.1 ? 1 + progression * 0.5 : 0.8;
 
-    // 4. Free man bonus - if this player has the most space
+    // 4. Free man bonus
     const freeManInfo = findFreeMan(state.attackers, state.defenders, state.carrierId);
     const isFreeMan = freeManInfo.player && freeManInfo.player.id === targetPlayer.id;
     const freeManBonus = isFreeMan ? 1.15 : 1.0;
 
-    // 5. Interception risk: check defenders near pass line
+    // 5. Interception risk
     let interceptionRisk = 0;
     for (const def of state.defenders) {
         const perpDist = pointToSegmentDist(def, from, to);
-        // Also consider if defender is moving toward the pass line
         const defToFrom = dist(def, from);
         const defToTo = dist(def, to);
         const alongPass = defToFrom < passDist && defToTo < passDist;
@@ -270,11 +309,10 @@ function evaluatePass(state, targetPlayer) {
 
     const successProb = Math.max(0.1, distFactor * spaceFactor * (1 - Math.min(interceptionRisk, 0.85)));
 
-    // Value based on target position and progression
     const distToGoal = dist(to, GOAL_POS);
     const positionValue = Math.max(0.1, 1 - distToGoal / 60);
     const valueIfSuccess = positionValue * progressBonus * freeManBonus;
-    const riskIfFail = receiverSpace < 5 ? 0.5 : 0.35; // Higher risk if passing into pressure
+    const riskIfFail = receiverSpace < 5 ? 0.5 : 0.35;
 
     const expectedValue = successProb * valueIfSuccess - (1 - successProb) * riskIfFail;
 
@@ -288,54 +326,70 @@ function evaluatePass(state, targetPlayer) {
         riskIfFail,
         receiverSpace: receiverSpace.toFixed(1),
         isFreeMan,
-        isProgressive: progression > 0.1
+        isProgressive: progression > 0.1,
+        distance: passDist.toFixed(1)
     };
 }
 
-// Evaluate shot on goal
+// Evaluate shot on goal - IMPROVED
 function evaluateShot(state) {
     const from = state.ball;
     const distToGoal = dist(from, GOAL_POS);
 
-    // Too far to shoot
-    if (distToGoal > 30) return null;
+    // Shooting range: up to 25m, but always consider if in box
+    const inPenaltyBox = from.x > HALF_LENGTH - 16.5 && Math.abs(from.y) < 20;
 
-    // Distance factor
-    const optimalDist = 12;
-    const distFactor = distToGoal < optimalDist
-        ? 0.7 + 0.3 * (distToGoal / optimalDist)
-        : Math.max(0.1, 1 - (distToGoal - optimalDist) / 25);
+    // Too far to shoot (unless very open)
+    if (distToGoal > 25 && !inPenaltyBox) return null;
 
-    // Angle to goal
-    const angle = Math.abs(Math.atan2(from.y, GOAL_POS.x - from.x));
-    const angleFactor = Math.max(0.3, 1 - angle / (Math.PI / 3));
+    // Distance factor - closer is better
+    let distFactor;
+    if (distToGoal < 6) distFactor = 0.85;  // Very close
+    else if (distToGoal < 12) distFactor = 0.7;
+    else if (distToGoal < 18) distFactor = 0.5;
+    else distFactor = Math.max(0.15, 0.4 - (distToGoal - 18) / 30);
+
+    // Angle to goal - central is better
+    const angleToGoal = Math.abs(Math.atan2(from.y, GOAL_POS.x - from.x));
+    const angleFactor = Math.max(0.2, 1 - angleToGoal / (Math.PI / 2.5));
+
+    // Check if shot is on target (within goal width)
+    const shotAngle = Math.abs(from.y) / Math.max(1, GOAL_POS.x - from.x);
+    const onTarget = shotAngle < (GOAL_WIDTH / 2) / Math.max(1, GOAL_POS.x - from.x) + 0.3;
 
     // Defenders blocking
     let blockFactor = 1;
     for (const def of state.defenders) {
         const defDist = dist(from, def);
-        if (defDist < 3) blockFactor *= 0.3;
-        else if (defDist < 6) blockFactor *= 0.7;
+        if (defDist < 2) blockFactor *= 0.2;
+        else if (defDist < 4) blockFactor *= 0.5;
+        else if (defDist < 6) blockFactor *= 0.8;
 
-        // Check if defender is between ball and goal
+        // Check if defender is in shot path
         const perpDist = pointToSegmentDist(def, from, GOAL_POS);
-        if (perpDist < 2 && def.x > from.x) blockFactor *= 0.5;
+        if (perpDist < 1.5 && def.x > from.x) blockFactor *= 0.3;
+        else if (perpDist < 3 && def.x > from.x) blockFactor *= 0.6;
     }
 
-    const successProb = distFactor * angleFactor * blockFactor * 0.6;
-    const valueIfSuccess = 1.0; // Goal!
-    const riskIfFail = 0.5;
+    const successProb = Math.min(0.9, distFactor * angleFactor * blockFactor * (onTarget ? 1 : 0.5));
+    const valueIfSuccess = 1.0; // GOAL!
+    const riskIfFail = 0.3; // Reduced risk since shot attempts are valuable
 
     const expectedValue = successProb * valueIfSuccess - (1 - successProb) * riskIfFail;
+
+    // Force positive EV if very close to goal
+    const forcedEV = distToGoal < 10 ? Math.max(expectedValue, 0.3) : expectedValue;
 
     return {
         type: 'shot',
         target: GOAL_POS,
         targetPlayer: null,
         successProb,
-        expectedValue,
+        expectedValue: forcedEV,
         valueIfSuccess,
-        riskIfFail
+        riskIfFail,
+        distToGoal: distToGoal.toFixed(1),
+        inBox: inPenaltyBox
     };
 }
 
@@ -726,7 +780,7 @@ function drawPitch() {
     ctx.fillStyle = '#2d5a27';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
     ctx.lineWidth = 2;
 
     // Center line & circle
@@ -740,12 +794,44 @@ function drawPitch() {
     const pr = pitchToCanvas(HALF_LENGTH - 16.5, 20.15);
     ctx.strokeRect(pr.x, pr.y, 16.5 * scaleX, 40.3 * scaleY);
 
-    // Goals
+    // Goal areas (6-yard box)
+    const ga1 = pitchToCanvas(-HALF_LENGTH, 9.16);
+    ctx.strokeRect(ga1.x, ga1.y, 5.5 * scaleX, 18.32 * scaleY);
+    const ga2 = pitchToCanvas(HALF_LENGTH - 5.5, 9.16);
+    ctx.strokeRect(ga2.x, ga2.y, 5.5 * scaleX, 18.32 * scaleY);
+
+    // Penalty spots
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    const ps1 = pitchToCanvas(-HALF_LENGTH + 11, 0);
+    ctx.beginPath(); ctx.arc(ps1.x, ps1.y, 3, 0, Math.PI * 2); ctx.fill();
+    const ps2 = pitchToCanvas(HALF_LENGTH - 11, 0);
+    ctx.beginPath(); ctx.arc(ps2.x, ps2.y, 3, 0, Math.PI * 2); ctx.fill();
+
+    // GOALS - Make them very visible!
+    // Left goal (defending)
+    const gl = pitchToCanvas(-HALF_LENGTH, GOAL_WIDTH / 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillRect(gl.x - 4 * scaleX, gl.y, 4 * scaleX, GOAL_WIDTH * scaleY);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(gl.x - 4 * scaleX, gl.y, 4 * scaleX, GOAL_WIDTH * scaleY);
+
+    // Right goal (attacking) - BRIGHT RED/ORANGE to show target
+    const gr = pitchToCanvas(HALF_LENGTH, GOAL_WIDTH / 2);
+    ctx.fillStyle = 'rgba(255, 100, 50, 0.6)'; // Orange glow
+    ctx.fillRect(gr.x, gr.y, 4 * scaleX, GOAL_WIDTH * scaleY);
+    ctx.strokeStyle = '#ff6432';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(gr.x, gr.y, 4 * scaleX, GOAL_WIDTH * scaleY);
+
+    // Goal posts for attacking goal
     ctx.fillStyle = '#fff';
-    const gl = pitchToCanvas(-HALF_LENGTH - 2, 3.66);
-    ctx.fillRect(gl.x, gl.y, 2 * scaleX, 7.32 * scaleY);
-    const gr = pitchToCanvas(HALF_LENGTH, 3.66);
-    ctx.fillRect(gr.x, gr.y, 2 * scaleX, 7.32 * scaleY);
+    ctx.fillRect(gr.x, gr.y - 2, 3 * scaleX, 4); // Top post
+    ctx.fillRect(gr.x, gr.y + GOAL_WIDTH * scaleY - 2, 3 * scaleX, 4); // Bottom post
+
+    // Reset stroke style
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2;
 }
 
 function drawPlayer(x, y, color, label, hasBall, isSelected) {
@@ -883,19 +969,31 @@ function updateActionList(frame) {
 
     list.innerHTML = frame.actions.map((a, i) => {
         let tags = '';
-        if (a.isFreeMan) tags += '<span style="background:#27ae60;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">FREE</span>';
-        if (a.isProgressive) tags += '<span style="background:#3498db;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">PROG</span>';
-        if (a.receiverSpace && parseFloat(a.receiverSpace) < 5) tags += '<span style="background:#e74c3c;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;">TIGHT</span>';
+        if (a.type === 'pass') {
+            if (a.isFreeMan) tags += '<span style="background:#27ae60;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">FREE</span>';
+            if (a.isProgressive) tags += '<span style="background:#3498db;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">PROG</span>';
+            if (a.receiverSpace && parseFloat(a.receiverSpace) < 5) tags += '<span style="background:#e74c3c;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;">TIGHT</span>';
+        }
+        if (a.type === 'shot') {
+            if (a.inBox) tags += '<span style="background:#f39c12;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">IN BOX</span>';
+            tags += `<span style="background:#9b59b6;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;">${a.distToGoal}m</span>`;
+        }
+
+        let info = '';
+        if (a.type === 'pass') {
+            info = `${a.targetPlayer} - ${(a.successProb * 100).toFixed(0)}% (${a.distance}m, space: ${a.receiverSpace}m)`;
+        } else if (a.type === 'shot') {
+            info = `GOAL - ${(a.successProb * 100).toFixed(0)}% (${a.distToGoal}m out)`;
+        } else {
+            info = `${(a.successProb * 100).toFixed(0)}%`;
+        }
 
         return `
         <div class="action-item ${a === highlightedAction ? 'selected' : ''}"
              onmouseenter="highlightAction(${i})" onmouseleave="clearHighlight()">
             <span class="action-type">${a.type}</span>
             <span class="action-value">${a.expectedValue.toFixed(3)}</span>
-            <div style="color: #888; margin-top: 3px;">
-                ${a.targetPlayer || `(${a.target.x.toFixed(0)}, ${a.target.y.toFixed(0)})`} - ${(a.successProb * 100).toFixed(0)}%
-                ${a.receiverSpace ? ` (${a.receiverSpace}m)` : ''}
-            </div>
+            <div style="color: #888; margin-top: 3px;">${info}</div>
             <div style="margin-top: 3px;">${tags}</div>
         </div>
     `}).join('');

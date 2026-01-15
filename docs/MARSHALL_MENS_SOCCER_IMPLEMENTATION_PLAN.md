@@ -2,309 +2,453 @@
 
 ## Executive Summary
 
-This plan outlines how Marshall Men's Soccer can leverage the football tracking system and physics-based decision engine to gain a competitive edge in collegiate soccer. The system's value compounds over time through data accumulation, pattern recognition, and tactical refinement.
+This plan outlines how Marshall Men's Soccer can leverage the football tracking system and physics-based decision engine to gain a competitive edge in collegiate soccer. **The key insight: capabilities compound over time.** What starts as basic position maps evolves into tactical exploitation recommendations as data accumulates and the system develops.
 
 ---
 
-## Phase 1: Foundation (Months 1-3)
+## System Capability Evolution
 
-### 1.1 Infrastructure Setup
+This section shows exactly what the system can do at each stage—from basic to advanced.
 
-**Equipment Requirements:**
-- Single wide-angle camera (4K recommended) positioned at midfield, elevated
-- Consistent filming position for all home matches and training sessions
-- Storage solution for video archive (estimate 50-100GB per match)
+### Month 1-2: Basic Positional Awareness
 
-**Software Deployment:**
-- Install tracking system on team analysis workstation
-- Configure `config/config.yaml` for Marshall's home pitch dimensions
-- Calibrate homography for Joan C. Edwards Stadium
+**Player Tracking Capabilities:**
+| What You Get | Example Output |
+|--------------|----------------|
+| Player positions on pitch | "Their #4 (CB) averages position at 35m from goal" |
+| Basic heatmaps | "Their left winger stays wide 70% of the time" |
+| Distance covered | "Their #8 covers 11.2km per match" |
+| Team shape snapshots | Static images showing where all 11 players are |
 
-**Initial Data Collection:**
-- Record all home matches
-- Record 2-3 training sessions per week
-- Begin building historical database
+**Decision Engine Capabilities:**
+| What You Get | Example Output |
+|--------------|----------------|
+| Defensive block identification | "They play a mid-block (line at 40m)" |
+| Basic compactness metrics | "Their defensive unit spans 25m horizontally" |
+| Formation detection | "4-3-3 in possession, 4-5-1 out of possession" |
 
-### 1.2 Baseline Metrics Establishment
-
-**Per-Player Physical Profiles:**
-| Metric | Purpose |
-|--------|---------|
-| Total distance per 90 | Workload capacity |
-| Max speed | Sprint capability |
-| High-intensity distance | Game fitness |
-| Sprint count & recovery | Repeated sprint ability |
-| Acceleration patterns | Explosive capacity |
-
-**Team Baseline Metrics:**
-- Average defensive block height (low/mid/high)
-- Compactness measurements
-- Transition speed (defense → attack)
-- Pressing intensity by game phase
-
-### 1.3 Initial Tactical Analysis
-
-Using the Decision Engine to establish:
-- Current defensive structure tendencies
-- Elimination vulnerability zones
-- Player positioning equilibrium vs. optimal positioning
-
----
-
-## Phase 2: Integration (Months 4-8)
-
-### 2.1 Individual Player Development
-
-**Defenders:**
-- Track elimination frequency (how often they get beaten)
-- Analyze positioning relative to physics-based optimal position
-- Identify recovery run patterns and effectiveness
-- Monitor spacing discipline within defensive unit
-
-**Midfielders:**
-- Passing lane availability metrics
-- Space control (Voronoi territory)
-- Transition involvement frequency
-- Pressing trigger recognition
-
-**Forwards:**
-- Movement patterns that create eliminations
-- Off-ball runs effectiveness
-- Pressing contribution metrics
-- Counter-attack positioning
-
-**Goalkeepers:**
-- Distribution patterns
-- Sweeper-keeper range analysis
-- Set piece positioning
-
-### 2.2 Tactical Pattern Recognition
-
-**Offensive Patterns:**
+**Tactical Value:**
 ```
-Track recurring sequences that lead to:
-├── Shots on goal
-├── Entries into final third
-├── Successful switches of play
-└── Counter-attack opportunities
-```
+EXAMPLE - Pre-match briefing:
+"Kentucky plays a mid-block. Their fullbacks tuck in narrow—average
+position only 12m from center. Their wingers drop deep to defend."
 
-**Defensive Patterns:**
-```
-Identify situations leading to:
-├── Opponent shots conceded
-├── Defensive line breaks
-├── Recovery scrambles
-└── Set piece vulnerabilities
-```
-
-### 2.3 Opposition Scouting Integration
-
-**Pre-Match Analysis:**
-- Process available opponent footage
-- Identify opponent's defensive block preferences
-- Map their pressing triggers and intensity
-- Find structural weaknesses (elimination opportunities)
-
-**In-Season Database:**
-- Build profiles on Sun Belt Conference opponents
-- Track opponent tendencies across multiple matches
-- Identify exploitable patterns
-
----
-
-## Phase 3: Optimization (Months 9-18)
-
-### 3.1 Training Session Design
-
-**Data-Driven Practice Planning:**
-
-| Training Focus | Data Source | Application |
-|----------------|-------------|-------------|
-| Pressing drills | Elimination data | Target specific elimination scenarios |
-| Positioning exercises | Force model output | Train optimal defensive positioning |
-| Transition work | Transition speed metrics | Improve attack/defense switch times |
-| Set pieces | Spatial analysis | Optimize positioning based on data |
-
-**Individual Correction:**
-- Generate player-specific positioning heatmaps
-- Compare actual vs. optimal positioning
-- Create targeted improvement plans
-
-### 3.2 Match Day Application
-
-**Pre-Match:**
-- Opposition analysis briefing with visualizations
-- Specific player matchup recommendations
-- Set piece positioning based on opponent tendencies
-
-**Halftime:**
-- Rapid first-half analysis (real-time module)
-- Structural adjustments based on elimination patterns
-- Physical output monitoring for substitution planning
-
-**Post-Match:**
-- Immediate statistical summary
-- Key moment analysis
-- Performance grading based on positional discipline
-
-### 3.3 Load Management
-
-**Physical Monitoring:**
-```
-Weekly Load Tracking:
-├── Match minutes
-├── Training intensity (via tracking)
-├── High-intensity distance accumulation
-├── Sprint load
-└── Recovery metrics
-```
-
-**Injury Prevention:**
-- Flag players exceeding load thresholds
-- Identify fatigue patterns (declining sprint counts, slower recovery)
-- Optimize rotation based on physical data
-
----
-
-## Phase 4: Compounding Value (Year 2+)
-
-### 4.1 Historical Pattern Analysis
-
-**Multi-Season Database Benefits:**
-
-1. **Recruitment Validation**
-   - Compare incoming player metrics to successful Marshall players
-   - Identify physical profile gaps in roster
-   - Track player development trajectories
-
-2. **Tactical Evolution Tracking**
-   - Measure improvement in team structure over seasons
-   - Quantify coaching philosophy implementation
-   - Identify what tactical changes produced results
-
-3. **Opponent Intelligence**
-   - Multi-year opponent profiles
-   - Track coaching changes and tactical shifts
-   - Predict opponent behavior based on historical data
-
-### 4.2 Predictive Capabilities
-
-**As data accumulates, the system enables:**
-
-| Capability | Data Requirement | Benefit |
-|------------|------------------|---------|
-| Fatigue prediction | 1+ season | Optimize substitutions |
-| Injury risk flags | 1+ season | Preventive intervention |
-| Opponent tendency prediction | 2+ seasons | Better game planning |
-| Player ceiling projection | 2+ seasons | Recruitment decisions |
-| Tactical success correlation | 2+ seasons | Evidence-based strategy |
-
-### 4.3 Decision Engine Refinement
-
-**Customization for Marshall's Style:**
-- Tune elimination thresholds to Marshall's defensive philosophy
-- Adjust force model weights for preferred structure
-- Build Marshall-specific optimal positioning models
-
-**Machine Learning Enhancement:**
-- Train models on Marshall's successful defensive sequences
-- Identify Marshall-specific patterns that predict goals
-- Develop automated tactical recommendations
-
----
-
-## Effectiveness Growth Model
-
-```
-Year 1: Foundation
-├── Establish baselines
-├── Learn system capabilities
-├── Begin pattern recognition
-└── Value: 1x (baseline insights)
-
-Year 2: Integration
-├── Full workflow integration
-├── Opposition scouting maturity
-├── Training design from data
-└── Value: 3x (actionable insights)
-
-Year 3: Optimization
-├── Predictive capabilities emerge
-├── Multi-season patterns visible
-├── Automated recommendations
-└── Value: 5x (competitive advantage)
-
-Year 4+: Compounding
-├── Deep historical analysis
-├── Recruitment analytics
-├── Institutional knowledge
-└── Value: 8x+ (sustained edge)
+→ Basic awareness of WHERE opponents typically are
+→ No exploitation recommendations yet—just observation
 ```
 
 ---
 
-## Specific Use Cases for Marshall
+### Month 3-4: Pattern Recognition & Speed Profiling
 
-### Use Case 1: Defensive Organization
+**Player Tracking Capabilities:**
+| What You Get | Example Output |
+|--------------|----------------|
+| Individual max speeds | "Their RB (#2) max speed: 28.1 km/h" |
+| Sprint frequency | "Their LB (#3) only sprints 12x per match vs league avg 22" |
+| Recovery run speeds | "Their CB (#4) recovery run avg: 19.2 km/h (slow)" |
+| Positional tendencies by game state | "When losing, their FBs push to halfway line" |
 
-**Problem:** Conceding goals from structural breakdowns
+**Decision Engine Capabilities:**
+| What You Get | Example Output |
+|--------------|----------------|
+| Elimination frequency by player | "Their RB gets eliminated 4.2x per match" |
+| Defensive response times | "Their LB takes 2.1s to close down—league avg 1.4s" |
+| 1v1 vulnerability zones | "Space behind their RB is exposed 34% of match time" |
 
-**Solution:**
-1. Run Decision Engine on goals conceded
-2. Identify which defenders were "eliminated" before each goal
-3. Map positioning errors relative to optimal positions
-4. Design training to address specific scenarios
+**Tactical Value:**
+```
+EXAMPLE - Matchup exploitation:
+"Their RB (#2) has max speed 28.1 km/h. Our LW (Johnson) hits 32.4 km/h.
 
-**Metric:** Reduce elimination-preceded goals by 30%
+When they play man-to-man press:
+- Their RB follows Johnson into wide areas
+- Creates 4.3m average gap behind RB
+- Johnson wins foot race to that space 89% of the time
 
-### Use Case 2: Pressing Effectiveness
+RECOMMENDATION: Play early balls in behind when RB steps to press.
+Johnson has 4.3 km/h speed advantage—he wins that race."
 
-**Problem:** High press not generating turnovers
+→ Now connecting PHYSICAL DATA to TACTICAL EXPLOITATION
+→ System identifies WHO is vulnerable and HOW to attack them
+```
 
-**Solution:**
-1. Track pressing trigger moments
-2. Analyze spacing during press
-3. Identify when press is easily played through
-4. Adjust triggers and player responsibilities
+---
 
-**Metric:** Increase high press success rate by 20%
+### Month 5-6: Trigger Recognition & Sequence Analysis
 
-### Use Case 3: Transition Speed
+**Player Tracking Capabilities:**
+| What You Get | Example Output |
+|--------------|----------------|
+| Movement sequences before goals | "3 of 5 goals came after switch of play to weak side" |
+| Pressing trigger identification | "They press when ball goes to our CBs" |
+| Fatigue patterns within matches | "Their #10 sprint count drops 40% after 60 min" |
+| Off-ball movement tracking | "Their striker makes 8.2 runs in behind per match" |
 
-**Problem:** Slow transition from defense to attack
+**Decision Engine Capabilities:**
+| What You Get | Example Output |
+|--------------|----------------|
+| Structural weakness windows | "When #6 presses, gap opens between CB and RB for 3.2s" |
+| Chain reaction modeling | "If we beat their #8, it eliminates #4 and #5 simultaneously" |
+| Optimal attack entry points | "Left half-space has lowest defensive density at 0.73" |
 
-**Solution:**
-1. Measure time from ball recovery to final third entry
-2. Identify fastest transition patterns
-3. Map player positions that enable quick transitions
-4. Train optimal recovery-to-attack positioning
+**Tactical Value:**
+```
+EXAMPLE - Exploiting pressing triggers:
+"WVU presses aggressively when ball goes to our right CB.
 
-**Metric:** Reduce average transition time by 2 seconds
+Sequence analysis shows:
+1. Their LW sprints to press (trigger)
+2. Their LB steps up to cover
+3. Creates 18m gap behind LB for 3.2 seconds
+4. Their CB cannot cover—too far (will be eliminated)
 
-### Use Case 4: Player Workload Balance
+RECOMMENDATION:
+- Bait press by playing to right CB
+- RB makes underlapping run into vacated space
+- Direct ball over LB—CB cannot recover in time
+- Success rate in similar situations: 67%"
 
-**Problem:** Key players fatiguing late in season
+→ System now identifies SEQUENCES and TIMING windows
+→ Recommends specific TACTICAL TRIGGERS to exploit
+```
 
-**Solution:**
-1. Track cumulative high-intensity distance
-2. Monitor sprint count trends
-3. Flag players approaching overload thresholds
-4. Strategic rotation before fatigue impacts performance
+---
 
-**Metric:** Maintain physical output consistency through season
+### Month 7-9: Predictive Modeling & Real-Time Adjustments
 
-### Use Case 5: Recruitment Support
+**Player Tracking Capabilities:**
+| What You Get | Example Output |
+|--------------|----------------|
+| Player behavior prediction | "When #7 receives ball here, he drives inside 78% of time" |
+| Fatigue-adjusted projections | "By 75 min, their RB response time increases 0.4s" |
+| Substitution impact modeling | "Their sub (#14) is faster but positions 3m deeper" |
+| Set piece movement patterns | "Their #9 always attacks near post on corners" |
 
-**Problem:** Evaluating transfer/recruit fit
+**Decision Engine Capabilities:**
+| What You Get | Example Output |
+|--------------|----------------|
+| Dynamic elimination prediction | "If we play here, 3 defenders will be eliminated" |
+| Optimal positioning suggestions | "Moving striker 2m left increases elimination probability by 23%" |
+| Counter-attack success probability | "Current transition: 34% chance of shot if we attack left side" |
 
-**Solution:**
-1. Profile successful Marshall players by position
-2. Compare recruit footage metrics to profiles
-3. Identify physical and tactical fit
-4. Project development based on similar player trajectories
+**Tactical Value:**
+```
+EXAMPLE - Halftime adjustment:
+"First half analysis complete:
 
-**Metric:** Improve recruitment hit rate
+Their RB is already showing fatigue:
+- Sprint count: 8 (usually 11 by halftime)
+- Last 3 recovery runs: 17.1, 16.8, 16.2 km/h (declining)
+- Response time to press: increased from 1.3s to 1.7s
+
+PREDICTION: By 70 min, his response time will exceed 2.0s
+
+HALFTIME RECOMMENDATION:
+- Increase balls in behind RB in second half
+- Instruct Johnson to make MORE runs (not fewer)—tire him further
+- Target 60-75 min window for maximum exploitation
+- Have Williams ready to sub at 70' for fresh legs vs tired RB"
+
+→ System now PREDICTS future states
+→ Provides TIMING recommendations for when to attack
+```
+
+---
+
+### Month 10-12: Integrated Tactical Intelligence
+
+**Player Tracking Capabilities:**
+| What You Get | Example Output |
+|--------------|----------------|
+| Multi-match opponent profiling | "Over 4 matches, their weakness is consistently left side" |
+| Your team's success patterns | "Marshall scores 73% of goals from left half-space entries" |
+| Player development trajectories | "Johnson's sprint count up 15% since August" |
+| Opponent adjustment detection | "They've changed—RB now stays deeper vs fast wingers" |
+
+**Decision Engine Capabilities:**
+| What You Get | Example Output |
+|--------------|----------------|
+| Game state optimization | "Current score +1, optimal strategy shifts to mid-block" |
+| Personnel-based recommendations | "Against their lineup, 4-2-3-1 creates 2.3 more eliminations than 4-3-3" |
+| Risk/reward analysis | "High press: 40% turnover chance, but 25% counter-attack exposure" |
+
+**Tactical Value:**
+```
+EXAMPLE - Full tactical game plan:
+"Charlotte Analysis (3 matches of data):
+
+THEIR VULNERABILITIES:
+1. RB Miller: Slow (26.1 km/h), eliminated 5.1x/match
+   → Target with Johnson (32.4 km/h)
+
+2. Pressing trigger: Ball to opposition CB
+   → Bait press, play in behind—3.2s window
+
+3. LCB-LB gap: Opens when LB joins attack
+   → Counter-attack left channel when they commit FB
+
+4. Set pieces: Near post under-defended
+   → 3 corner routines targeting near post
+
+THEIR STRENGTHS (AVOID):
+1. #10 pressing—triggers effective team press
+   → Play around #10, not through
+
+2. Right side overload—RW + RB combine well
+   → Keep defensive shape compact right side
+
+FATIGUE WINDOWS:
+- Their #8 fades at 55 min (target)
+- Their RB fades at 65 min (target)
+
+MARSHALL GAME PLAN:
+0-30 min: Patient buildup, identify if weaknesses hold
+30-55 min: Begin targeting RB with Johnson
+55-70 min: Increase tempo—their #8 and RB both fatigued
+70-90 min: Game management based on score"
+
+→ COMPLETE TACTICAL INTELLIGENCE for match preparation
+→ Specific player matchups with evidence
+→ Timing windows based on fatigue prediction
+```
+
+---
+
+### Year 2+: Compounding Intelligence
+
+**Player Tracking Evolution:**
+| Capability | What It Enables |
+|------------|-----------------|
+| Multi-season opponent database | "Charlotte has faced fast LWs 6 times—they adjust by dropping RB. Here's how to counter their counter..." |
+| Player development modeling | "Based on trajectory, recruit X projects to hit 31 km/h by junior year" |
+| Tactical style fingerprinting | "This is a 'Coach Smith' team—expect high press first 15 min then mid-block" |
+
+**Decision Engine Evolution:**
+| Capability | What It Enables |
+|------------|-----------------|
+| Opponent response prediction | "When we exploit their RB, they usually sub at 60'—here's how to attack the sub" |
+| Formation effectiveness database | "Against 4-4-2 mid-blocks, our 3-5-2 creates 34% more eliminations" |
+| Automated tactical recommendations | System generates game plan drafts for coach review |
+
+---
+
+## Development Roadmap: How Capabilities Unlock
+
+The system improves through **data accumulation** AND **feature development**:
+
+### Phase 1: Core Tracking (Month 1-3)
+```
+DEVELOPMENT FOCUS:
+├── Calibrate for Joan C. Edwards Stadium
+├── Train team classifier on Marshall/opponent jerseys
+├── Establish reliable player detection
+└── Build first opponent database
+
+UNLOCKS:
+├── Basic position tracking ✓
+├── Distance/speed metrics ✓
+├── Formation detection ✓
+└── Simple heatmaps ✓
+```
+
+### Phase 2: Physical Profiling (Month 4-6)
+```
+DEVELOPMENT FOCUS:
+├── Per-player speed profiles (all Sun Belt opponents)
+├── Sprint detection calibration
+├── Recovery run tracking
+└── Fatigue pattern identification
+
+UNLOCKS:
+├── Individual physical comparisons ✓
+├── Matchup speed advantages ✓
+├── "Slow fullback vs fast winger" analysis ✓
+└── Basic exploitation recommendations ✓
+```
+
+### Phase 3: Decision Engine Integration (Month 7-9)
+```
+DEVELOPMENT FOCUS:
+├── Tune elimination thresholds for college game
+├── Calibrate defensive force model
+├── Train pattern recognition on Marshall matches
+└── Build pressing trigger database
+
+UNLOCKS:
+├── Elimination prediction ✓
+├── Structural weakness identification ✓
+├── Pressing trigger exploitation ✓
+└── Sequence-based recommendations ✓
+```
+
+### Phase 4: Predictive Layer (Month 10-12)
+```
+DEVELOPMENT FOCUS:
+├── Fatigue prediction models
+├── In-match adjustment detection
+├── Success probability calculation
+└── Real-time processing optimization
+
+UNLOCKS:
+├── "Attack at 65 min when RB is tired" ✓
+├── Halftime tactical adjustments ✓
+├── Substitution timing optimization ✓
+└── Risk/reward analysis ✓
+```
+
+### Phase 5: Compounding Intelligence (Year 2+)
+```
+DEVELOPMENT FOCUS:
+├── Multi-season database queries
+├── Opponent adjustment tracking
+├── Coaching style fingerprinting
+└── Automated game plan generation
+
+UNLOCKS:
+├── "They adjusted last time—here's counter" ✓
+├── Recruitment analytics ✓
+├── Institutional tactical memory ✓
+└── Automated scouting reports ✓
+```
+
+---
+
+## Concrete Examples: The Same Opponent Over Time
+
+**Opponent: Charlotte (Sun Belt rival)**
+
+### Month 1 Analysis:
+```
+"Charlotte plays 4-3-3. Their defensive line sits at 38m.
+Their fullbacks are relatively narrow."
+
+→ Basic observation only
+```
+
+### Month 4 Analysis:
+```
+"Charlotte's RB (Miller) has max speed 26.1 km/h—slowest FB in conference.
+He gets eliminated 5.1 times per match. Your LW Johnson (32.4 km/h) has
+6.3 km/h advantage.
+
+When Charlotte plays man-to-man, Miller follows wingers wide, creating
+space in behind that he cannot recover to."
+
+→ Specific matchup exploitation identified
+```
+
+### Month 8 Analysis:
+```
+"Charlotte's pressing trigger: ball played to opposing CB.
+
+When triggered:
+1. LW sprints to press (1.2s)
+2. Miller steps up to cover passing lane (1.8s)
+3. Gap opens behind Miller (18m for 3.2s)
+4. LCB cannot cover—will be eliminated
+
+Recommended sequence:
+- Play to RCB (trigger press)
+- RCB plays first-time to RB
+- RB plays early ball in behind Miller
+- Johnson attacks space
+
+Success rate in similar sequences: 67%"
+
+→ Full tactical sequence with timing
+```
+
+### Month 12 Analysis:
+```
+"Charlotte scouting report (based on 3 matches this season):
+
+Miller Exploitation Protocol:
+- Works until ~58 min, then Charlotte subs Thompson (#14)
+- Thompson is faster (29.8 km/h) but positions 4m deeper
+- Adjustment: Switch from balls in behind to balls to feet
+
+Fatigue Windows:
+- Their #8 (Rodriguez) fades at 52 min—press him then
+- Miller fades at 58 min—attack before sub
+- If Thompson subs in, target with dribbles not pace
+
+Their Counter-Adjustments (from film):
+- Against Kentucky's fast LW, they dropped Miller 8m deeper
+- Prediction: They'll do same against Johnson
+- Counter: Use Johnson as decoy, attack through middle instead
+
+Pre-Match Recommendation:
+Start with direct balls to Johnson to force Miller deep.
+Once he's deep, switch to central overloads where their
+#6 is weakest in duels (34% win rate)."
+
+→ Multi-layered tactical plan anticipating opponent adjustments
+```
+
+### Year 2 Analysis:
+```
+"Charlotte Year-Over-Year Analysis:
+
+Coach Smith's teams always:
+- Press high first 15 min (65% intensity)
+- Drop to mid-block after first goal
+- Bring on defensive sub at 60' when protecting lead
+
+Miller has declined:
+- Last season: 27.2 km/h max speed
+- This season: 26.1 km/h
+- Prediction: Won't start against fast wingers
+
+New RB recruit (Davis #22):
+- Faster (30.1 km/h) but poor positioning
+- Gets eliminated 6.8x/match (worse than Miller)
+- Different exploitation: Not pace—positioning errors
+
+Recommended Approach:
+If Miller starts → Pace exploitation (Johnson)
+If Davis starts → Movement exploitation (dummy runs, late arrivals)
+
+Historical success vs Charlotte:
+- 4-2-3-1 formation: 2.1 xG created
+- 4-3-3 formation: 1.4 xG created
+- Recommendation: Start 4-2-3-1"
+
+→ Institutional knowledge spanning seasons
+```
+
+---
+
+## How Further Development Enhances Both Systems
+
+### Player Tracking Improvements
+
+| Development | Tactical Unlock |
+|-------------|-----------------|
+| **Per-player acceleration profiles** | Identify who wins first step in duels—not just top speed |
+| **Off-ball movement tracking** | Quantify run quality, not just quantity |
+| **Pressing intensity metrics** | Know exactly when opponent's press is beatable |
+| **Ball tracking improvements** | Possession sequences, pass success by zone |
+| **3D ball trajectory** | Aerial duel predictions, cross effectiveness |
+
+### Decision Engine Improvements
+
+| Development | Tactical Unlock |
+|-------------|-----------------|
+| **GNN tactical analysis** | Formation effectiveness predictions |
+| **Space control modeling** | Where to position for maximum pitch control |
+| **Pass availability prediction** | Real-time passing lane recommendations |
+| **Expected threat (xT) integration** | Quantify value of positions and movements |
+| **Real-time elimination display** | Sideline tablet showing live tactical state |
+
+### Combined Improvements
+
+| Development | Tactical Unlock |
+|-------------|-----------------|
+| **Player identity tracking** | "Their #7 specifically struggles against left-footers" |
+| **Automated clip tagging** | Instant video of all exploitation opportunities |
+| **Natural language reports** | System generates scouting reports automatically |
+| **Opponent modeling** | "If you do X, they'll respond with Y—here's counter" |
 
 ---
 
@@ -318,87 +462,64 @@ Year 4+: Compounding
 | Analyst | Process data, generate reports | 15 hrs/week |
 | Graduate Assistant | Opposition scouting | 10 hrs/week |
 | Head Coach | Review insights, integrate into planning | 3 hrs/week |
-| Position Coaches | Individual player feedback | 2 hrs/week each |
 
 ### Technology
-
-- Analysis workstation with GPU (for real-time processing)
-- Cloud storage for video archive
-- Visualization displays for team meetings
-- Tablet/laptop for sideline access
-
-### Budget Considerations
 
 | Item | Estimated Cost | Frequency |
 |------|----------------|-----------|
 | Camera equipment | $2,000-5,000 | One-time |
-| Workstation | $2,000-3,000 | One-time |
-| Storage (cloud) | $50-100/month | Ongoing |
-| Staff training | Internal | One-time |
+| Workstation (GPU) | $2,000-3,000 | One-time |
+| Cloud storage | $50-100/month | Ongoing |
 
 ---
 
-## Success Metrics
+## Success Metrics by Phase
 
-### Short-Term (Season 1)
-- [ ] 100% home match capture rate
-- [ ] Physical profiles for all roster players
-- [ ] Baseline tactical metrics established
-- [ ] 3+ opposition reports generated
+### Phase 1-2 (Months 1-6)
+- [ ] Physical profiles for all Sun Belt opponent starters
+- [ ] 3+ specific matchup advantages identified per opponent
+- [ ] First "slow FB vs fast winger" exploitation executed in match
 
-### Medium-Term (Season 2)
-- [ ] Training design influenced by data weekly
-- [ ] Pre-match reports for all conference opponents
-- [ ] Player development tracking active
-- [ ] Halftime analysis integration
+### Phase 3-4 (Months 7-12)
+- [ ] Pressing trigger database for all conference opponents
+- [ ] Halftime adjustments based on real-time analysis
+- [ ] Fatigue-based substitution timing recommendations
 
-### Long-Term (Season 3+)
-- [ ] Predictive fatigue management
-- [ ] Multi-season trend analysis
-- [ ] Recruitment analytics support
-- [ ] Quantified tactical philosophy
+### Year 2+
+- [ ] Multi-season opponent profiles inform game plans
+- [ ] System predicts opponent adjustments before they happen
+- [ ] Automated scouting report generation
 
 ---
 
-## Competitive Advantage Summary
-
-### Why This System Creates Lasting Value for Marshall
-
-1. **Data Moat**: Every match filmed builds an irreplaceable historical database that opponents don't have access to
-
-2. **Institutional Knowledge**: Coaching changes don't reset progress—data persists and compounds
-
-3. **Objective Feedback**: Removes bias from player evaluation; decisions backed by evidence
-
-4. **Opponent Intelligence**: Conference opponents become predictable over multiple seasons
-
-5. **Efficiency**: Staff time focused on insights, not manual video review
-
-6. **Player Buy-In**: Athletes respond to objective metrics and clear improvement targets
-
-7. **Recruiting Edge**: Demonstrate professional-level analytics to recruits
-
-### The Compounding Effect
+## The Compounding Effect Visualized
 
 ```
-More Data → Better Patterns → Smarter Decisions → Better Results
-    ↑                                                    |
-    └────────────────────────────────────────────────────┘
-                     (Continuous Loop)
+MONTH 1:  "They play a mid-block"
+             ↓
+MONTH 4:  "Their RB is slow—target him with pace"
+             ↓
+MONTH 8:  "Bait their press, attack the gap behind RB in 3.2s window"
+             ↓
+MONTH 12: "Attack RB until 58', then switch to central overloads"
+             ↓
+YEAR 2:   "They'll adjust by dropping RB—here's how to counter their counter"
+             ↓
+YEAR 3:   "Coach Smith always does X in this situation—exploit pattern Y"
 ```
 
-Each season of data makes the next season's analysis more powerful. By Year 3, Marshall would have analytical capabilities matching or exceeding most collegiate programs.
+Each layer builds on the previous. By Year 3, Marshall has tactical intelligence that opponents simply cannot match without their own multi-year data investment.
 
 ---
 
 ## Next Steps
 
-1. **Immediate**: Designate video coordinator and begin filming protocol
-2. **Week 1-2**: Configure system for Joan C. Edwards Stadium
-3. **Week 3-4**: Process first matches and establish baselines
-4. **Month 2**: First tactical report to coaching staff
-5. **Month 3**: Integration into training design begins
+1. **Week 1-2**: Configure system for Joan C. Edwards Stadium
+2. **Week 3-4**: Process first matches, establish physical baselines
+3. **Month 2**: First opponent physical profiles (speed comparisons)
+4. **Month 3**: First "matchup exploitation" recommendations
+5. **Month 4**: Target first tactical exploitation in live match
 
 ---
 
-*This plan positions Marshall Men's Soccer to build a sustainable competitive advantage through data-driven decision making. The investment compounds over time, with each season's data making the system more valuable.*
+*The system's value is not static—it grows with every match filmed and every feature developed. What starts as "showing where players are" becomes "telling you exactly how to beat this specific opponent with your specific players."*

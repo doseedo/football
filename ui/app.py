@@ -226,26 +226,16 @@ def reset():
     return jsonify({'success': True})
 
 
-@app.route('/api/xg_zones')
-def get_xg_zones():
-    """Get xG zone data for visualization.
+# Cache for xG zones (computed once at startup)
+_xg_zones_cache = None
 
-    Returns the full 120x75 yard grid (9000 zones).
-    Each zone is 1 yard x 1 yard.
-    Coordinates are centered: x from -60 to 59, y from -37 to 37.
-    """
-    # Return ALL 9000 zones (120 x 75 grid)
-    # Grid is stored as corner-based (0-119, 0-74)
-    # Convert to centered for API response
+def _compute_xg_zones():
+    """Pre-compute all 9000 xG zones (called once)."""
     zones = []
-
-    # Full 120x75 grid - one zone per square yard
-    for x in range(120):  # 0 to 119 (corner-based)
-        for y in range(75):  # 0 to 74 (corner-based)
-            # Convert to centered coordinates
-            centered_x = x - 60  # -60 to 59
-            centered_y = y - 37  # -37 to 37 (close enough to -37.5 to 37.5)
-
+    for x in range(120):
+        for y in range(75):
+            centered_x = x - 60
+            centered_y = y - 37
             xg = engine.xg_model.get_xg((centered_x, centered_y))
             zones.append({
                 'x': centered_x,
@@ -254,14 +244,23 @@ def get_xg_zones():
                 'width': 1,
                 'height': 1,
             })
-
-    return jsonify({
+    return {
         'zones': zones,
         'pitch_length': 120,
         'pitch_width': 75,
-        'grid_resolution': 1,  # 1 yard per zone
-        'total_zones': len(zones),  # Should be 9000
-    })
+        'grid_resolution': 1,
+        'total_zones': len(zones),
+    }
+
+@app.route('/api/xg_zones')
+def get_xg_zones():
+    """Get xG zone data for visualization (cached)."""
+    global _xg_zones_cache
+    if _xg_zones_cache is None:
+        print("Computing xG zones (first request only)...")
+        _xg_zones_cache = _compute_xg_zones()
+        print(f"Cached {_xg_zones_cache['total_zones']} zones")
+    return jsonify(_xg_zones_cache)
 
 
 if __name__ == '__main__':

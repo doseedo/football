@@ -383,65 +383,100 @@ function evaluatePass(state, targetPlayer) {
     };
 }
 
-// Evaluate shot on goal - IMPROVED
+// Evaluate shot on goal - xG MODEL
+// Shot is ALWAYS an option within range - xG tells you if it's worth it
 function evaluateShot(state) {
     const from = state.ball;
     const distToGoal = dist(from, GOAL_POS);
 
-    // Shooting range: up to 25m, but always consider if in box
+    // Max shooting range - beyond this, no shot option
+    const MAX_SHOT_RANGE = 35;
+    if (distToGoal > MAX_SHOT_RANGE) return null;
+
+    // Zone detection
     const inPenaltyBox = from.x > HALF_LENGTH - 16.5 && Math.abs(from.y) < 20;
+    const inSixYardBox = from.x > HALF_LENGTH - 5.5 && Math.abs(from.y) < 9.16;
 
-    // Too far to shoot (unless very open)
-    if (distToGoal > 25 && !inPenaltyBox) return null;
+    // ========================================
+    // xG CALCULATION - Based on real xG models
+    // ========================================
 
-    // Distance factor - closer is better
-    let distFactor;
-    if (distToGoal < 6) distFactor = 0.85;  // Very close
-    else if (distToGoal < 12) distFactor = 0.7;
-    else if (distToGoal < 18) distFactor = 0.5;
-    else distFactor = Math.max(0.15, 0.4 - (distToGoal - 18) / 30);
+    // 1. BASE xG from distance (exponential decay)
+    // Close range (~5m) = ~0.6 xG, penalty spot (11m) = ~0.35, edge of box (16m) = ~0.15
+    let baseXG;
+    if (distToGoal < 5) baseXG = 0.65;
+    else if (distToGoal < 8) baseXG = 0.45;
+    else if (distToGoal < 11) baseXG = 0.35; // Penalty spot range
+    else if (distToGoal < 16) baseXG = 0.20;
+    else if (distToGoal < 20) baseXG = 0.10;
+    else if (distToGoal < 25) baseXG = 0.05;
+    else baseXG = 0.02; // Long range
 
-    // Angle to goal - central is better
-    const angleToGoal = Math.abs(Math.atan2(from.y, GOAL_POS.x - from.x));
-    const angleFactor = Math.max(0.2, 1 - angleToGoal / (Math.PI / 2.5));
+    // 2. ANGLE factor - central shots worth more
+    // Calculate angle to goal center
+    const angleToGoalCenter = Math.abs(Math.atan2(from.y, GOAL_POS.x - from.x));
+    // Also calculate visible goal angle (how much of goal you can see)
+    const visibleGoalAngle = 2 * Math.atan2(GOAL_WIDTH / 2, distToGoal);
 
-    // Check if shot is on target (within goal width)
-    const shotAngle = Math.abs(from.y) / Math.max(1, GOAL_POS.x - from.x);
-    const onTarget = shotAngle < (GOAL_WIDTH / 2) / Math.max(1, GOAL_POS.x - from.x) + 0.3;
+    let angleFactor;
+    if (angleToGoalCenter < 0.15) angleFactor = 1.0; // Dead center
+    else if (angleToGoalCenter < 0.3) angleFactor = 0.85;
+    else if (angleToGoalCenter < 0.5) angleFactor = 0.65;
+    else if (angleToGoalCenter < 0.8) angleFactor = 0.40;
+    else angleFactor = 0.20; // Very tight angle
 
-    // Defenders blocking
-    let blockFactor = 1;
+    // 3. DEFENDER PRESSURE - reduces xG significantly
+    let defenderPressure = 1.0; // 1.0 = no pressure, lower = more pressure
+
     for (const def of state.defenders) {
         const defDist = dist(from, def);
-        if (defDist < 2) blockFactor *= 0.2;
-        else if (defDist < 4) blockFactor *= 0.5;
-        else if (defDist < 6) blockFactor *= 0.8;
 
-        // Check if defender is in shot path
+        // Close defender reduces xG
+        if (defDist < 1.5) defenderPressure *= 0.3; // Defender right on you
+        else if (defDist < 3) defenderPressure *= 0.5;
+        else if (defDist < 5) defenderPressure *= 0.7;
+        else if (defDist < 8) defenderPressure *= 0.85;
+
+        // Defender in shot path blocks the shot
         const perpDist = pointToSegmentDist(def, from, GOAL_POS);
-        if (perpDist < 1.5 && def.x > from.x) blockFactor *= 0.3;
-        else if (perpDist < 3 && def.x > from.x) blockFactor *= 0.6;
+        if (def.x > from.x) { // Only defenders in front matter
+            if (perpDist < 1) defenderPressure *= 0.2; // Direct block
+            else if (perpDist < 2) defenderPressure *= 0.4;
+            else if (perpDist < 3) defenderPressure *= 0.6;
+            else if (perpDist < 5) defenderPressure *= 0.8;
+        }
     }
 
-    const successProb = Math.min(0.9, distFactor * angleFactor * blockFactor * (onTarget ? 1 : 0.5));
-    const valueIfSuccess = 1.0; // GOAL!
-    const riskIfFail = 0.3; // Reduced risk since shot attempts are valuable
+    // 4. COUNT defenders between ball and goal
+    let defendersInPath = 0;
+    for (const def of state.defenders) {
+        if (def.x > from.x && def.x < GOAL_POS.x) {
+            const perpDist = pointToSegmentDist(def, from, GOAL_POS);
+            if (perpDist < 4) defendersInPath++;
+        }
+    }
 
-    const expectedValue = successProb * valueIfSuccess - (1 - successProb) * riskIfFail;
+    // 5. FINAL xG calculation
+    const xG = Math.min(0.95, Math.max(0.01, baseXG * angleFactor * defenderPressure));
 
-    // Force positive EV if very close to goal
-    const forcedEV = distToGoal < 10 ? Math.max(expectedValue, 0.3) : expectedValue;
+    // Expected value: xG * 1 (goal value) - (1-xG) * possession loss risk
+    const possessionLossRisk = 0.25; // Losing ball on missed shot
+    const expectedValue = xG - (1 - xG) * possessionLossRisk;
 
     return {
         type: 'shot',
         target: GOAL_POS,
         targetPlayer: null,
-        successProb,
-        expectedValue: forcedEV,
-        valueIfSuccess,
-        riskIfFail,
+        successProb: xG,
+        expectedValue,
+        valueIfSuccess: 1.0,
+        riskIfFail: possessionLossRisk,
         distToGoal: distToGoal.toFixed(1),
-        inBox: inPenaltyBox
+        inBox: inPenaltyBox,
+        inSixYard: inSixYardBox,
+        xG: (xG * 100).toFixed(1), // Display as percentage
+        defendersBlocking: defendersInPath,
+        angle: (angleToGoalCenter * 180 / Math.PI).toFixed(0) // Angle in degrees
     };
 }
 
@@ -1108,8 +1143,13 @@ function updateActionList(frame) {
             if (a.receiverSpace && parseFloat(a.receiverSpace) < 5) tags += '<span style="background:#e74c3c;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;">TIGHT</span>';
         }
         if (a.type === 'shot') {
-            if (a.inBox) tags += '<span style="background:#f39c12;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">IN BOX</span>';
-            tags += `<span style="background:#9b59b6;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;">${a.distToGoal}m</span>`;
+            if (a.inSixYard) tags += '<span style="background:#27ae60;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">6YD</span>';
+            else if (a.inBox) tags += '<span style="background:#f39c12;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">PEN BOX</span>';
+            tags += `<span style="background:#9b59b6;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">${a.distToGoal}m</span>`;
+            tags += `<span style="background:#3498db;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">${a.angle}°</span>`;
+            if (a.defendersBlocking > 0) {
+                tags += `<span style="background:#e74c3c;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;">${a.defendersBlocking} BLOCK</span>`;
+            }
         }
 
         let info = '';
@@ -1119,7 +1159,7 @@ function updateActionList(frame) {
                 tags += `<span style="background:#e67e22;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">${a.interceptors} DEF</span>`;
             }
         } else if (a.type === 'shot') {
-            info = `GOAL - ${(a.successProb * 100).toFixed(0)}% (${a.distToGoal}m out)`;
+            info = `xG: ${a.xG}% (${a.distToGoal}m, ${a.angle}° angle)`;
         } else {
             info = `${(a.successProb * 100).toFixed(0)}%`;
         }

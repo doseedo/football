@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Football Tactical Analysis - Standalone</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .header { text-align: center; margin-bottom: 20px; }
+        h1 { color: #4ecca3; font-size: 28px; margin-bottom: 5px; }
+        .subtitle { color: #888; font-size: 14px; }
+        .main-container {
+            display: flex; gap: 20px; max-width: 1600px; margin: 0 auto;
+            flex-wrap: wrap; justify-content: center;
+        }
+        .pitch-panel {
+            background: #16213e; border-radius: 12px; padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .side-panel {
+            background: #16213e; border-radius: 12px; padding: 20px;
+            width: 350px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        #pitch { background: #2d5a27; border: 3px solid #fff; border-radius: 5px; cursor: crosshair; }
+        .tabs { display: flex; gap: 5px; margin-bottom: 15px; }
+        .tab {
+            flex: 1; padding: 10px; background: #0f3460; border: none;
+            border-radius: 5px; color: #888; cursor: pointer; font-size: 13px;
+        }
+        .tab.active { background: #4ecca3; color: #1a1a2e; font-weight: bold; }
+        .tab:hover:not(.active) { background: #1a4a7a; color: #fff; }
+        .controls { display: flex; gap: 8px; margin: 15px 0; flex-wrap: wrap; justify-content: center; }
+        button {
+            background: #4ecca3; color: #1a1a2e; border: none; padding: 10px 16px;
+            border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 13px;
+        }
+        button:hover { background: #3db892; }
+        button:disabled { background: #444; color: #888; cursor: not-allowed; }
+        button.secondary { background: #0f3460; color: #4ecca3; }
+        button.danger { background: #e94560; color: #fff; }
+        .info-section { margin: 15px 0; padding: 12px; background: #0f3460; border-radius: 8px; }
+        .info-section h4 { color: #4ecca3; margin-bottom: 10px; font-size: 14px; }
+        .info-row { display: flex; justify-content: space-between; margin: 6px 0; font-size: 13px; }
+        .info-label { color: #888; }
+        .info-value { color: #fff; font-weight: 500; }
+        .action-list { max-height: 200px; overflow-y: auto; }
+        .action-item {
+            padding: 8px 10px; margin: 5px 0; background: #1a1a2e;
+            border-radius: 5px; cursor: pointer; font-size: 12px;
+        }
+        .action-item:hover { background: #2a2a4e; }
+        .action-item.selected { border-left: 3px solid #4ecca3; }
+        .action-type { color: #4ecca3; font-weight: bold; text-transform: uppercase; }
+        .action-value { float: right; color: #f1c40f; }
+        .legend { display: flex; gap: 15px; margin-top: 15px; font-size: 12px; justify-content: center; }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .legend-dot { width: 14px; height: 14px; border-radius: 50%; }
+        .slider-container { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+        .slider-container label { font-size: 12px; color: #888; min-width: 60px; }
+        input[type="range"] { flex: 1; height: 6px; background: #0f3460; border-radius: 3px; }
+        .result-success { color: #4ecca3; }
+        .result-fail { color: #e94560; }
+        .result-goal { color: #f1c40f; }
+        .editor-tools { display: flex; gap: 5px; margin: 10px 0; flex-wrap: wrap; }
+        .tool-btn { padding: 8px 12px; font-size: 12px; border-radius: 5px; }
+        .tool-btn.active { background: #4ecca3; color: #1a1a2e; }
+        .step-counter { font-size: 24px; color: #4ecca3; text-align: center; margin: 10px 0; }
+        .progress-bar { height: 4px; background: #0f3460; border-radius: 2px; margin: 10px 0; overflow: hidden; }
+        .progress-fill { height: 100%; background: #4ecca3; transition: width 0.3s; }
+        .help-text { font-size: 11px; color: #666; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Football Tactical Analysis</h1>
+        <p class="subtitle">Standalone Decision Engine - Runs in Browser</p>
+    </div>
+
+    <div class="main-container">
+        <div class="pitch-panel">
+            <canvas id="pitch" width="750" height="480"></canvas>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot" style="background: #3498db;"></div><span>Attackers</span></div>
+                <div class="legend-item"><div class="legend-dot" style="background: #e74c3c;"></div><span>Defenders</span></div>
+                <div class="legend-item"><div class="legend-dot" style="background: #f1c40f;"></div><span>Ball</span></div>
+            </div>
+        </div>
+
+        <div class="side-panel">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('simulation')">Simulation</button>
+                <button class="tab" onclick="switchTab('editor')">Editor</button>
+                <button class="tab" onclick="switchTab('analysis')">Analysis</button>
+            </div>
+
+            <div id="simulation-tab" class="tab-content">
+                <div class="step-counter">Step <span id="stepNum">0</span> / <span id="totalSteps">0</span></div>
+                <div class="progress-bar"><div class="progress-fill" id="progressBar" style="width: 0%"></div></div>
+                <div class="controls">
+                    <button onclick="resetSim()">Reset</button>
+                    <button onclick="stepBack()" id="backBtn">Back</button>
+                    <button onclick="togglePlay()" id="playBtn">Play</button>
+                    <button onclick="stepForward()" id="fwdBtn">Next</button>
+                </div>
+                <div class="slider-container">
+                    <label>Speed</label>
+                    <input type="range" id="speed" min="200" max="2000" value="800" onchange="updateSpeed()">
+                </div>
+                <div class="info-section">
+                    <h4>Current State</h4>
+                    <div class="info-row"><span class="info-label">Ball Carrier</span><span class="info-value" id="carrier">-</span></div>
+                    <div class="info-row"><span class="info-label">Ball Position</span><span class="info-value" id="ballPos">-</span></div>
+                </div>
+                <div class="info-section">
+                    <h4>Action</h4>
+                    <div class="info-row"><span class="info-label">Type</span><span class="info-value" id="actionType">-</span></div>
+                    <div class="info-row"><span class="info-label">Target</span><span class="info-value" id="actionTarget">-</span></div>
+                    <div class="info-row"><span class="info-label">Success Prob</span><span class="info-value" id="successProb">-</span></div>
+                    <div class="info-row"><span class="info-label">Expected Value</span><span class="info-value" id="expValue">-</span></div>
+                </div>
+                <div class="info-section">
+                    <h4>Result</h4>
+                    <div class="info-row"><span class="info-label">Outcome</span><span class="info-value" id="result">-</span></div>
+                    <div id="message" style="font-size: 12px; color: #888; margin-top: 5px;"></div>
+                </div>
+            </div>
+
+            <div id="editor-tab" class="tab-content" style="display: none;">
+                <div class="editor-tools">
+                    <button class="tool-btn active" onclick="setTool('select')" id="tool-select">Select</button>
+                    <button class="tool-btn" onclick="setTool('attacker')" id="tool-attacker">+ Attacker</button>
+                    <button class="tool-btn" onclick="setTool('defender')" id="tool-defender">+ Defender</button>
+                    <button class="tool-btn" onclick="setTool('ball')" id="tool-ball">+ Ball</button>
+                </div>
+                <div class="controls">
+                    <button onclick="clearPitch()" class="danger">Clear</button>
+                    <button onclick="loadDefault()" class="secondary">Default Setup</button>
+                    <button onclick="runSimulation()">Run Simulation</button>
+                </div>
+                <div id="selectedInfo" style="display: none;" class="info-section">
+                    <h4>Selected Player</h4>
+                    <div class="info-row"><span class="info-label">ID</span><span class="info-value" id="selId">-</span></div>
+                    <div class="info-row"><span class="info-label">Position</span><span class="info-value" id="selPos">-</span></div>
+                    <button onclick="deleteSelected()" class="danger" style="margin-top: 10px; width: 100%;">Delete</button>
+                </div>
+                <p class="help-text">Click to add players. Drag to move. Right-click on player to set as ball carrier.</p>
+            </div>
+
+            <div id="analysis-tab" class="tab-content" style="display: none;">
+                <div class="info-section">
+                    <h4>Available Actions</h4>
+                    <div class="action-list" id="actionList"><div style="color: #666; font-size: 12px;">Run simulation first</div></div>
+                </div>
+                <div class="info-section">
+                    <h4>Simulation Stats</h4>
+                    <div class="info-row"><span class="info-label">Total Steps</span><span class="info-value" id="statSteps">0</span></div>
+                    <div class="info-row"><span class="info-label">Successful</span><span class="info-value" id="statSuccess">0</span></div>
+                    <div class="info-row"><span class="info-label">Failed</span><span class="info-value" id="statFail">0</span></div>
+                    <div class="info-row"><span class="info-label">Goals</span><span class="info-value" id="statGoals">0</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+// ============================================
+// DECISION ENGINE - JavaScript Port
+// ============================================
+
+const PITCH_LENGTH = 105, PITCH_WIDTH = 68;
+const HALF_LENGTH = 52.5, HALF_WIDTH = 34;
+const GOAL_POS = { x: HALF_LENGTH, y: 0 };
+
+// Utility functions
+function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
+function norm(v) { return Math.sqrt(v.x * v.x + v.y * v.y); }
+function dot(a, b) { return a.x * b.x + a.y * b.y; }
+
+// Point to line segment distance
+function pointToSegmentDist(p, a, b) {
+    const ab = { x: b.x - a.x, y: b.y - a.y };
+    const ap = { x: p.x - a.x, y: p.y - a.y };
+    const abLen = norm(ab);
+    if (abLen < 0.1) return dist(p, a);
+    const t = Math.max(0, Math.min(1, dot(ap, ab) / (abLen * abLen)));
+    const closest = { x: a.x + t * ab.x, y: a.y + t * ab.y };
+    return dist(p, closest);
+}
+
+// Evaluate pass to a target player
+function evaluatePass(state, targetPlayer) {
+    const from = state.ball;
+    const to = targetPlayer;
+    const passDist = dist(from, to);
+
+    // Distance factor: short passes more reliable
+    const distFactor = Math.max(0.3, 1 - passDist / 50);
+
+    // Forward pass bonus
+    const isForward = to.x > from.x;
+    const valueMultiplier = isForward ? 1.2 : 0.8;
+
+    // Interception risk: check defenders near pass line
+    let interceptionRisk = 0;
+    for (const def of state.defenders) {
+        const perpDist = pointToSegmentDist(def, from, to);
+        if (perpDist < 2) interceptionRisk += 0.35;
+        else if (perpDist < 4) interceptionRisk += 0.15;
+        else if (perpDist < 6) interceptionRisk += 0.05;
+    }
+
+    const successProb = distFactor * (1 - Math.min(interceptionRisk, 0.85));
+
+    // Value based on target position (closer to goal = better)
+    const distToGoal = dist(to, GOAL_POS);
+    const positionValue = Math.max(0.1, 1 - distToGoal / 60);
+    const valueIfSuccess = positionValue * valueMultiplier;
+    const riskIfFail = 0.4;
+
+    const expectedValue = successProb * valueIfSuccess - (1 - successProb) * riskIfFail;
+
+    return {
+        type: 'pass',
+        target: { x: to.x, y: to.y },
+        targetPlayer: targetPlayer.id,
+        successProb,
+        expectedValue,
+        valueIfSuccess,
+        riskIfFail
+    };
+}
+
+// Evaluate shot on goal
+function evaluateShot(state) {
+    const from = state.ball;
+    const distToGoal = dist(from, GOAL_POS);
+
+    // Too far to shoot
+    if (distToGoal > 30) return null;
+
+    // Distance factor
+    const optimalDist = 12;
+    const distFactor = distToGoal < optimalDist
+        ? 0.7 + 0.3 * (distToGoal / optimalDist)
+        : Math.max(0.1, 1 - (distToGoal - optimalDist) / 25);
+
+    // Angle to goal
+    const angle = Math.abs(Math.atan2(from.y, GOAL_POS.x - from.x));
+    const angleFactor = Math.max(0.3, 1 - angle / (Math.PI / 3));
+
+    // Defenders blocking
+    let blockFactor = 1;
+    for (const def of state.defenders) {
+        const defDist = dist(from, def);
+        if (defDist < 3) blockFactor *= 0.3;
+        else if (defDist < 6) blockFactor *= 0.7;
+
+        // Check if defender is between ball and goal
+        const perpDist = pointToSegmentDist(def, from, GOAL_POS);
+        if (perpDist < 2 && def.x > from.x) blockFactor *= 0.5;
+    }
+
+    const successProb = distFactor * angleFactor * blockFactor * 0.6;
+    const valueIfSuccess = 1.0; // Goal!
+    const riskIfFail = 0.5;
+
+    const expectedValue = successProb * valueIfSuccess - (1 - successProb) * riskIfFail;
+
+    return {
+        type: 'shot',
+        target: GOAL_POS,
+        targetPlayer: null,
+        successProb,
+        expectedValue,
+        valueIfSuccess,
+        riskIfFail
+    };
+}
+
+// Evaluate dribble forward
+function evaluateDribble(state) {
+    const from = state.ball;
+    const carrier = state.attackers.find(a => a.id === state.carrierId);
+    if (!carrier) return null;
+
+    // Dribble target: 8m forward
+    const target = { x: Math.min(from.x + 8, HALF_LENGTH - 5), y: from.y };
+
+    // Check for nearby defenders
+    let pressureFactor = 1;
+    for (const def of state.defenders) {
+        const defDist = dist(from, def);
+        if (defDist < 2) pressureFactor *= 0.2;
+        else if (defDist < 4) pressureFactor *= 0.5;
+        else if (defDist < 6) pressureFactor *= 0.8;
+    }
+
+    const successProb = pressureFactor * 0.7;
+    const distToGoal = dist(target, GOAL_POS);
+    const valueIfSuccess = Math.max(0.2, 0.8 - distToGoal / 50);
+    const riskIfFail = 0.35;
+
+    const expectedValue = successProb * valueIfSuccess - (1 - successProb) * riskIfFail;
+
+    return {
+        type: 'dribble',
+        target,
+        targetPlayer: null,
+        successProb,
+        expectedValue,
+        valueIfSuccess,
+        riskIfFail
+    };
+}
+
+// Find all available actions
+function findActions(state) {
+    const actions = [];
+
+    // Pass to each teammate
+    for (const attacker of state.attackers) {
+        if (attacker.id === state.carrierId) continue;
+        const passAction = evaluatePass(state, attacker);
+        if (passAction && passAction.expectedValue > -0.3) {
+            actions.push(passAction);
+        }
+    }
+
+    // Shot on goal
+    const shot = evaluateShot(state);
+    if (shot) actions.push(shot);
+
+    // Dribble
+    const dribble = evaluateDribble(state);
+    if (dribble && dribble.expectedValue > -0.2) actions.push(dribble);
+
+    // Sort by expected value
+    actions.sort((a, b) => b.expectedValue - a.expectedValue);
+
+    return actions;
+}
+
+// Execute an action
+function executeAction(state, action) {
+    const roll = Math.random();
+    const success = roll < action.successProb;
+
+    let newState = JSON.parse(JSON.stringify(state));
+    let result, message;
+
+    if (action.type === 'pass') {
+        if (success) {
+            newState.ball = { x: action.target.x, y: action.target.y };
+            newState.carrierId = action.targetPlayer;
+            result = 'success';
+            message = `Pass to ${action.targetPlayer} completed`;
+        } else {
+            // Interception - ball goes to nearest defender
+            let nearestDef = state.defenders[0];
+            let minDist = Infinity;
+            for (const def of state.defenders) {
+                const d = pointToSegmentDist(def, state.ball, action.target);
+                if (d < minDist) { minDist = d; nearestDef = def; }
+            }
+            newState.ball = { x: nearestDef.x, y: nearestDef.y };
+            newState.carrierId = null;
+            result = 'intercepted';
+            message = `Pass intercepted by ${nearestDef.id}`;
+        }
+    } else if (action.type === 'shot') {
+        if (success) {
+            newState.ball = { x: GOAL_POS.x, y: 0 };
+            result = 'goal';
+            message = 'GOAL!';
+        } else {
+            newState.ball = { x: HALF_LENGTH - 5, y: (Math.random() - 0.5) * 10 };
+            newState.carrierId = null;
+            result = 'missed';
+            message = 'Shot saved/missed';
+        }
+    } else if (action.type === 'dribble') {
+        if (success) {
+            newState.ball = { x: action.target.x, y: action.target.y };
+            // Move carrier
+            const carrierIdx = newState.attackers.findIndex(a => a.id === state.carrierId);
+            if (carrierIdx >= 0) {
+                newState.attackers[carrierIdx].x = action.target.x;
+                newState.attackers[carrierIdx].y = action.target.y;
+            }
+            result = 'success';
+            message = `${state.carrierId} dribbles forward`;
+        } else {
+            // Tackled
+            let nearestDef = state.defenders[0];
+            let minDist = Infinity;
+            for (const def of state.defenders) {
+                const d = dist(def, state.ball);
+                if (d < minDist) { minDist = d; nearestDef = def; }
+            }
+            newState.ball = { x: nearestDef.x, y: nearestDef.y };
+            newState.carrierId = null;
+            result = 'tackled';
+            message = `Tackled by ${nearestDef.id}`;
+        }
+    }
+
+    // Move defenders toward ball slightly
+    for (let i = 0; i < newState.defenders.length; i++) {
+        const def = newState.defenders[i];
+        const toBall = { x: newState.ball.x - def.x, y: newState.ball.y - def.y };
+        const d = norm(toBall);
+        if (d > 5) {
+            newState.defenders[i].x += (toBall.x / d) * 2;
+            newState.defenders[i].y += (toBall.y / d) * 1;
+        }
+    }
+
+    return { newState, result, message, action };
+}
+
+// Run full simulation
+function runFullSimulation(initialState, maxSteps = 15) {
+    const frames = [];
+    let state = JSON.parse(JSON.stringify(initialState));
+
+    for (let step = 0; step < maxSteps; step++) {
+        const actions = findActions(state);
+
+        if (actions.length === 0 || !state.carrierId) {
+            frames.push({
+                step: step + 1,
+                state: JSON.parse(JSON.stringify(state)),
+                actions: [],
+                chosenAction: null,
+                result: 'end',
+                message: 'No actions available'
+            });
+            break;
+        }
+
+        const chosenAction = actions[0]; // Pick best action
+        const { newState, result, message } = executeAction(state, chosenAction);
+
+        frames.push({
+            step: step + 1,
+            state: JSON.parse(JSON.stringify(state)),
+            actions,
+            chosenAction,
+            result,
+            message
+        });
+
+        if (result === 'goal' || result === 'intercepted' || result === 'tackled' || result === 'missed') {
+            // Add final frame
+            frames.push({
+                step: step + 2,
+                state: JSON.parse(JSON.stringify(newState)),
+                actions: [],
+                chosenAction: null,
+                result: 'end',
+                message: result === 'goal' ? 'GOAL SCORED!' : 'Possession lost'
+            });
+            break;
+        }
+
+        state = newState;
+    }
+
+    return frames;
+}
+
+// ============================================
+// UI CODE
+// ============================================
+
+const canvas = document.getElementById('pitch');
+const ctx = canvas.getContext('2d');
+
+let currentTab = 'simulation';
+let currentTool = 'select';
+let selectedPlayer = null;
+let dragging = false;
+let highlightedAction = null;
+
+// Editor state
+let editorState = {
+    attackers: [],
+    defenders: [],
+    ball: null,
+    carrierId: null
+};
+
+// Simulation state
+let frames = [];
+let currentFrame = 0;
+let playing = false;
+let playInterval = null;
+let speed = 800;
+
+// Convert pitch coords to canvas
+const scaleX = canvas.width / PITCH_LENGTH;
+const scaleY = canvas.height / PITCH_WIDTH;
+
+function pitchToCanvas(x, y) {
+    return { x: (x + HALF_LENGTH) * scaleX, y: (HALF_WIDTH - y) * scaleY };
+}
+
+function canvasToPitch(cx, cy) {
+    return { x: cx / scaleX - HALF_LENGTH, y: HALF_WIDTH - cy / scaleY };
+}
+
+function drawPitch() {
+    ctx.fillStyle = '#2d5a27';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 2;
+
+    // Center line & circle
+    const c = pitchToCanvas(0, 0);
+    ctx.beginPath(); ctx.moveTo(c.x, 0); ctx.lineTo(c.x, canvas.height); ctx.stroke();
+    ctx.beginPath(); ctx.arc(c.x, c.y, 9.15 * scaleX, 0, Math.PI * 2); ctx.stroke();
+
+    // Penalty areas
+    const pl = pitchToCanvas(-HALF_LENGTH, 20.15);
+    ctx.strokeRect(pl.x, pl.y, 16.5 * scaleX, 40.3 * scaleY);
+    const pr = pitchToCanvas(HALF_LENGTH - 16.5, 20.15);
+    ctx.strokeRect(pr.x, pr.y, 16.5 * scaleX, 40.3 * scaleY);
+
+    // Goals
+    ctx.fillStyle = '#fff';
+    const gl = pitchToCanvas(-HALF_LENGTH - 2, 3.66);
+    ctx.fillRect(gl.x, gl.y, 2 * scaleX, 7.32 * scaleY);
+    const gr = pitchToCanvas(HALF_LENGTH, 3.66);
+    ctx.fillRect(gr.x, gr.y, 2 * scaleX, 7.32 * scaleY);
+}
+
+function drawPlayer(x, y, color, label, hasBall, isSelected) {
+    const pos = pitchToCanvas(x, y);
+
+    if (isSelected) {
+        ctx.beginPath(); ctx.arc(pos.x, pos.y, 16, 0, Math.PI * 2);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
+    }
+
+    ctx.beginPath(); ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = hasBall ? '#f1c40f' : '#fff';
+    ctx.lineWidth = hasBall ? 3 : 1.5; ctx.stroke();
+
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, pos.x, pos.y);
+}
+
+function drawBall(x, y) {
+    const pos = pitchToCanvas(x, y);
+    ctx.beginPath(); ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#f1c40f'; ctx.fill();
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.stroke();
+}
+
+function drawAction(from, to, result, isHighlighted) {
+    const f = pitchToCanvas(from.x, from.y);
+    const t = pitchToCanvas(to.x, to.y);
+
+    ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(t.x, t.y);
+
+    if (isHighlighted) {
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.setLineDash([]);
+    } else {
+        ctx.strokeStyle = result === 'success' || result === 'goal'
+            ? 'rgba(46, 204, 113, 0.8)'
+            : result === null ? 'rgba(78, 204, 163, 0.5)' : 'rgba(231, 76, 60, 0.8)';
+        ctx.lineWidth = 3; ctx.setLineDash([5, 5]);
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+
+    // Arrow head
+    const angle = Math.atan2(t.y - f.y, t.x - f.x);
+    ctx.beginPath(); ctx.moveTo(t.x, t.y);
+    ctx.lineTo(t.x - 10 * Math.cos(angle - 0.4), t.y - 10 * Math.sin(angle - 0.4));
+    ctx.lineTo(t.x - 10 * Math.cos(angle + 0.4), t.y - 10 * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+}
+
+function render() {
+    drawPitch();
+
+    if (currentTab === 'editor') {
+        renderEditor();
+        return;
+    }
+
+    if (frames.length === 0) return;
+
+    const frame = frames[currentFrame];
+    const st = frame.state;
+
+    // Draw actions
+    if (highlightedAction) {
+        drawAction(st.ball, highlightedAction.target, null, true);
+    } else if (frame.chosenAction) {
+        drawAction(st.ball, frame.chosenAction.target, frame.result, false);
+    }
+
+    // Draw players
+    st.defenders.forEach(d => drawPlayer(d.x, d.y, '#e74c3c', d.id.replace('D', ''), false, false));
+    st.attackers.forEach(a => drawPlayer(a.x, a.y, '#3498db', a.id, a.id === st.carrierId, false));
+    drawBall(st.ball.x, st.ball.y);
+
+    updateUI(frame);
+}
+
+function renderEditor() {
+    editorState.defenders.forEach((d, i) => {
+        const isSel = selectedPlayer?.type === 'defender' && selectedPlayer.index === i;
+        const hasBall = editorState.carrierId === d.id;
+        drawPlayer(d.x, d.y, '#e74c3c', 'D' + (i + 1), hasBall, isSel);
+    });
+
+    editorState.attackers.forEach((a, i) => {
+        const isSel = selectedPlayer?.type === 'attacker' && selectedPlayer.index === i;
+        const hasBall = editorState.carrierId === a.id;
+        drawPlayer(a.x, a.y, '#3498db', a.id, hasBall, isSel);
+    });
+
+    if (editorState.ball) drawBall(editorState.ball.x, editorState.ball.y);
+}
+
+function updateUI(frame) {
+    const st = frame.state;
+    document.getElementById('stepNum').textContent = frame.step;
+    document.getElementById('totalSteps').textContent = frames.length;
+    document.getElementById('progressBar').style.width = (currentFrame / Math.max(1, frames.length - 1) * 100) + '%';
+
+    document.getElementById('carrier').textContent = st.carrierId || '-';
+    document.getElementById('ballPos').textContent = `(${st.ball.x.toFixed(1)}, ${st.ball.y.toFixed(1)})`;
+
+    if (frame.chosenAction) {
+        document.getElementById('actionType').textContent = frame.chosenAction.type.toUpperCase();
+        document.getElementById('actionTarget').textContent =
+            `(${frame.chosenAction.target.x.toFixed(1)}, ${frame.chosenAction.target.y.toFixed(1)})`;
+        document.getElementById('successProb').textContent = (frame.chosenAction.successProb * 100).toFixed(0) + '%';
+        document.getElementById('expValue').textContent = frame.chosenAction.expectedValue.toFixed(3);
+    } else {
+        ['actionType', 'actionTarget', 'successProb', 'expValue'].forEach(id =>
+            document.getElementById(id).textContent = '-');
+    }
+
+    const resEl = document.getElementById('result');
+    resEl.textContent = frame.result || '-';
+    resEl.className = frame.result === 'success' ? 'result-success' :
+                      frame.result === 'goal' ? 'result-goal' : 'result-fail';
+    document.getElementById('message').textContent = frame.message || '';
+
+    document.getElementById('backBtn').disabled = currentFrame === 0;
+    document.getElementById('fwdBtn').disabled = currentFrame >= frames.length - 1;
+
+    updateActionList(frame);
+}
+
+function updateActionList(frame) {
+    const list = document.getElementById('actionList');
+    if (!frame.actions || frame.actions.length === 0) {
+        list.innerHTML = '<div style="color: #666; font-size: 12px;">No actions</div>';
+        return;
+    }
+
+    list.innerHTML = frame.actions.map((a, i) => `
+        <div class="action-item ${a === highlightedAction ? 'selected' : ''}"
+             onmouseenter="highlightAction(${i})" onmouseleave="clearHighlight()">
+            <span class="action-type">${a.type}</span>
+            <span class="action-value">${a.expectedValue.toFixed(3)}</span>
+            <div style="color: #888; margin-top: 3px;">
+                ${a.targetPlayer || `(${a.target.x.toFixed(0)}, ${a.target.y.toFixed(0)})`} - ${(a.successProb * 100).toFixed(0)}%
+            </div>
+        </div>
+    `).join('');
+}
+
+function highlightAction(i) {
+    if (frames.length > 0 && frames[currentFrame].actions[i]) {
+        highlightedAction = frames[currentFrame].actions[i];
+        render();
+    }
+}
+
+function clearHighlight() { highlightedAction = null; render(); }
+
+// Simulation controls
+function stepForward() { if (currentFrame < frames.length - 1) { currentFrame++; render(); } else stopPlay(); }
+function stepBack() { if (currentFrame > 0) { currentFrame--; render(); } }
+function resetSim() { stopPlay(); currentFrame = 0; render(); }
+function togglePlay() { playing ? stopPlay() : startPlay(); }
+function startPlay() {
+    playing = true;
+    document.getElementById('playBtn').textContent = 'Pause';
+    playInterval = setInterval(() => currentFrame < frames.length - 1 ? stepForward() : stopPlay(), speed);
+}
+function stopPlay() {
+    playing = false;
+    document.getElementById('playBtn').textContent = 'Play';
+    if (playInterval) { clearInterval(playInterval); playInterval = null; }
+}
+function updateSpeed() { speed = 2200 - document.getElementById('speed').value; if (playing) { stopPlay(); startPlay(); } }
+
+// Tab switching
+function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+    document.getElementById(tab + '-tab').style.display = 'block';
+    render();
+}
+
+// Editor functions
+function setTool(tool) {
+    currentTool = tool;
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tool-' + tool).classList.add('active');
+}
+
+function clearPitch() {
+    editorState = { attackers: [], defenders: [], ball: null, carrierId: null };
+    selectedPlayer = null;
+    document.getElementById('selectedInfo').style.display = 'none';
+    render();
+}
+
+function loadDefault() {
+    editorState = {
+        attackers: [
+            { id: 'GK', x: -45, y: 0 },
+            { id: 'CB1', x: -30, y: -10 },
+            { id: 'CB2', x: -30, y: 10 },
+            { id: 'LB', x: -25, y: -25 },
+            { id: 'RB', x: -25, y: 25 },
+            { id: 'CM1', x: -10, y: -8 },
+            { id: 'CM2', x: -10, y: 8 },
+            { id: 'CAM', x: 5, y: 0 },
+            { id: 'LW', x: 15, y: -18 },
+            { id: 'RW', x: 15, y: 18 },
+            { id: 'ST', x: 20, y: 0 }
+        ],
+        defenders: [
+            { id: 'D_GK', x: 45, y: 0 },
+            { id: 'D_CB1', x: 32, y: -8 },
+            { id: 'D_CB2', x: 32, y: 8 },
+            { id: 'D_LB', x: 28, y: -22 },
+            { id: 'D_RB', x: 28, y: 22 },
+            { id: 'D_CM1', x: 18, y: -10 },
+            { id: 'D_CM2', x: 18, y: 10 },
+            { id: 'D_DM', x: 22, y: 0 },
+            { id: 'D_LM', x: 12, y: -15 },
+            { id: 'D_RM', x: 12, y: 15 }
+        ],
+        ball: { x: -30, y: -10 },
+        carrierId: 'CB1'
+    };
+    render();
+}
+
+function deleteSelected() {
+    if (!selectedPlayer) return;
+    if (selectedPlayer.type === 'attacker') {
+        if (editorState.carrierId === editorState.attackers[selectedPlayer.index].id) editorState.carrierId = null;
+        editorState.attackers.splice(selectedPlayer.index, 1);
+    } else {
+        editorState.defenders.splice(selectedPlayer.index, 1);
+    }
+    selectedPlayer = null;
+    document.getElementById('selectedInfo').style.display = 'none';
+    render();
+}
+
+function runSimulation() {
+    if (editorState.attackers.length === 0 || !editorState.ball || !editorState.carrierId) {
+        alert('Need at least one attacker with ball. Right-click a player to set as carrier.');
+        return;
+    }
+
+    const initialState = {
+        attackers: editorState.attackers.map(a => ({ ...a })),
+        defenders: editorState.defenders.map(d => ({ ...d })),
+        ball: { ...editorState.ball },
+        carrierId: editorState.carrierId
+    };
+
+    frames = runFullSimulation(initialState, 15);
+    currentFrame = 0;
+
+    // Update stats
+    let success = 0, fail = 0, goals = 0;
+    frames.forEach(f => {
+        if (f.result === 'success') success++;
+        else if (f.result === 'goal') { goals++; success++; }
+        else if (['intercepted', 'tackled', 'missed'].includes(f.result)) fail++;
+    });
+    document.getElementById('statSteps').textContent = frames.length;
+    document.getElementById('statSuccess').textContent = success;
+    document.getElementById('statFail').textContent = fail;
+    document.getElementById('statGoals').textContent = goals;
+
+    switchTab('simulation');
+    document.querySelectorAll('.tab')[0].classList.add('active');
+    render();
+}
+
+// Canvas interaction
+canvas.addEventListener('mousedown', e => {
+    if (currentTab !== 'editor') return;
+
+    const rect = canvas.getBoundingClientRect();
+    const pos = canvasToPitch(e.clientX - rect.left, e.clientY - rect.top);
+
+    if (currentTool === 'select') {
+        let found = null;
+        editorState.attackers.forEach((a, i) => { if (dist(a, pos) < 4) found = { type: 'attacker', index: i }; });
+        editorState.defenders.forEach((d, i) => { if (dist(d, pos) < 4) found = { type: 'defender', index: i }; });
+
+        selectedPlayer = found;
+        dragging = !!found;
+
+        if (found) {
+            document.getElementById('selectedInfo').style.display = 'block';
+            const p = found.type === 'attacker' ? editorState.attackers[found.index] : editorState.defenders[found.index];
+            document.getElementById('selId').textContent = p.id;
+            document.getElementById('selPos').textContent = `(${p.x.toFixed(1)}, ${p.y.toFixed(1)})`;
+        } else {
+            document.getElementById('selectedInfo').style.display = 'none';
+        }
+    } else if (currentTool === 'attacker') {
+        const id = 'A' + (editorState.attackers.length + 1);
+        editorState.attackers.push({ id, x: pos.x, y: pos.y });
+    } else if (currentTool === 'defender') {
+        const id = 'D' + (editorState.defenders.length + 1);
+        editorState.defenders.push({ id, x: pos.x, y: pos.y });
+    } else if (currentTool === 'ball') {
+        editorState.ball = { x: pos.x, y: pos.y };
+    }
+    render();
+});
+
+canvas.addEventListener('mousemove', e => {
+    if (!dragging || !selectedPlayer) return;
+    const rect = canvas.getBoundingClientRect();
+    const pos = canvasToPitch(e.clientX - rect.left, e.clientY - rect.top);
+    pos.x = Math.max(-HALF_LENGTH, Math.min(HALF_LENGTH, pos.x));
+    pos.y = Math.max(-HALF_WIDTH, Math.min(HALF_WIDTH, pos.y));
+
+    const p = selectedPlayer.type === 'attacker'
+        ? editorState.attackers[selectedPlayer.index]
+        : editorState.defenders[selectedPlayer.index];
+    p.x = pos.x; p.y = pos.y;
+
+    // Move ball with carrier
+    if (editorState.carrierId === p.id) {
+        editorState.ball = { x: pos.x, y: pos.y };
+    }
+
+    document.getElementById('selPos').textContent = `(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)})`;
+    render();
+});
+
+canvas.addEventListener('mouseup', () => { dragging = false; });
+
+canvas.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if (currentTab !== 'editor') return;
+
+    const rect = canvas.getBoundingClientRect();
+    const pos = canvasToPitch(e.clientX - rect.left, e.clientY - rect.top);
+
+    // Find clicked player
+    let found = null;
+    editorState.attackers.forEach((a, i) => { if (dist(a, pos) < 4) found = { type: 'attacker', index: i, player: a }; });
+
+    if (found) {
+        editorState.carrierId = found.player.id;
+        editorState.ball = { x: found.player.x, y: found.player.y };
+        render();
+    }
+});
+
+// Initialize with default setup
+loadDefault();
+render();
+</script>
+</body>
+</html>

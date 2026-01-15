@@ -530,33 +530,22 @@ function evaluateShot(state) {
     // 5. FINAL xG calculation
     const xG = Math.min(0.95, Math.max(0.01, baseXG * angleFactor * defenderPressure));
 
-    // Expected value calculation
-    // A GOAL is the ultimate objective - worth much more than other actions
-    // When you have a good chance, TAKE IT rather than trying to improve
-    const GOAL_VALUE = 2.0; // Goals are very valuable
+    // Expected value: xG (probability of goal) minus cost of missing
+    // Possession loss risk is low for shots - worst case is a goal kick
+    let possessionLossRisk = 0.15;
+    if (defendersClose === 0) possessionLossRisk = 0.05; // Miss = corner or goal kick, not bad
+    else if (nearestDefenderDist > 5) possessionLossRisk = 0.1;
 
-    // Possession loss risk depends on situation
-    // If you're unmarked and miss, you often get a corner or rebound
-    // If defenders are close, a block might lead to counter-attack
-    let possessionLossRisk = 0.3;
-    if (defendersClose === 0) possessionLossRisk = 0.1; // Miss goes out, probably corner
-    else if (nearestDefenderDist > 5) possessionLossRisk = 0.15;
-
-    // Expected value heavily rewards good xG chances
-    const expectedValue = xG * GOAL_VALUE - (1 - xG) * possessionLossRisk;
-
-    // TAKE THE SHOT bonus: if xG is above threshold, boost EV further
-    // This prevents "dribble closer" when you already have a good chance
-    const takeTheShotBonus = xG > 0.25 ? 0.3 : (xG > 0.15 ? 0.15 : 0);
-    const finalExpectedValue = expectedValue + takeTheShotBonus;
+    // EV = P(goal) × 1 - P(miss) × risk = xG - (1-xG) × risk
+    const expectedValue = xG - (1 - xG) * possessionLossRisk;
 
     return {
         type: 'shot',
         target: GOAL_POS,
         targetPlayer: null,
         successProb: xG,
-        expectedValue: finalExpectedValue,
-        valueIfSuccess: GOAL_VALUE,
+        expectedValue,
+        valueIfSuccess: 1.0,
         riskIfFail: possessionLossRisk,
         distToGoal: distToGoal.toFixed(1),
         inBox: inPenaltyBox,
@@ -576,19 +565,32 @@ function evaluateDribble(state) {
     // Dribble target: 8m forward
     const target = { x: Math.min(from.x + 8, HALF_LENGTH - 5), y: from.y };
 
-    // Check for nearby defenders
+    // Check defenders at START, along PATH, and at TARGET
     let pressureFactor = 1;
     for (const def of state.defenders) {
-        const defDist = dist(from, def);
-        if (defDist < 2) pressureFactor *= 0.2;
-        else if (defDist < 4) pressureFactor *= 0.5;
-        else if (defDist < 6) pressureFactor *= 0.8;
+        // Defender at current position
+        const defDistStart = dist(from, def);
+        if (defDistStart < 2) pressureFactor *= 0.15;
+        else if (defDistStart < 4) pressureFactor *= 0.4;
+        else if (defDistStart < 6) pressureFactor *= 0.7;
+
+        // Defender at target position (dribbling INTO them)
+        const defDistTarget = dist(target, def);
+        if (defDistTarget < 2) pressureFactor *= 0.1; // Dribbling right into defender
+        else if (defDistTarget < 4) pressureFactor *= 0.3;
+        else if (defDistTarget < 6) pressureFactor *= 0.6;
+
+        // Defender along the path
+        const perpDist = pointToSegmentDist(def, from, target);
+        if (perpDist < 2 && def.x > from.x && def.x < target.x) {
+            pressureFactor *= 0.2; // Defender can intercept
+        }
     }
 
-    const successProb = pressureFactor * 0.7;
+    const successProb = Math.max(0.05, pressureFactor * 0.65); // Base 65%, can go very low
     const distToGoal = dist(target, GOAL_POS);
     const valueIfSuccess = Math.max(0.2, 0.8 - distToGoal / 50);
-    const riskIfFail = 0.35;
+    const riskIfFail = 0.4; // Losing ball in attacking position is costly
 
     const expectedValue = successProb * valueIfSuccess - (1 - successProb) * riskIfFail;
 
@@ -710,11 +712,12 @@ function evaluateWithLookahead(state, action, depth) {
     }
 
     // Combined value: probability-weighted outcome
-    // Success: immediate value + discounted future value
-    // Failure: -riskIfFail (possession loss)
-    const successValue = action.valueIfSuccess + FUTURE_DISCOUNT * futureValue;
+    // Success: you get to take the best future action (no double counting)
+    // Failure: you lose possession
+    const successValue = FUTURE_DISCOUNT * futureValue;
     const failValue = -action.riskIfFail;
 
+    // EV = P(success) × futureValue - P(fail) × lossRisk
     const lookaheadEV = action.successProb * successValue + (1 - action.successProb) * failValue;
 
     return lookaheadEV;

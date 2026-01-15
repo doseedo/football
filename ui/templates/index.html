@@ -349,7 +349,7 @@
                 <div class="toggle-row">
                     <span>Show xG Zones</span>
                     <label class="toggle-switch">
-                        <input type="checkbox" id="showXgZones" onchange="render()">
+                        <input type="checkbox" id="showXgZones" onchange="toggleXgZones()">
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
@@ -453,7 +453,7 @@
             canvas.addEventListener('click', onClick);
 
             loadState();
-            loadXgZones();
+            // xG zones load lazily when checkbox is toggled
         });
 
         function resizeCanvas() {
@@ -498,14 +498,24 @@
             }
         }
 
-        // Load xG zones
+        // Load xG zones (lazy - only when toggled on)
         async function loadXgZones() {
             try {
+                console.log('Loading xG zones...');
                 const res = await fetch('/api/xg_zones');
                 xgZones = await res.json();
+                console.log('Loaded', xgZones.total_zones, 'zones');
                 render();
             } catch (e) {
                 console.error('Failed to load xG zones:', e);
+            }
+        }
+
+        function toggleXgZones() {
+            if (document.getElementById('showXgZones').checked && !xgZones) {
+                loadXgZones();
+            } else {
+                render();
             }
         }
 

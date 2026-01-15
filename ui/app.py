@@ -230,25 +230,26 @@ def reset():
 _xg_zones_cache = None
 
 def _compute_xg_zones():
-    """Pre-compute all 9000 xG zones (called once)."""
+    """Pre-compute xG zones with 3x3 yard resolution for performance."""
     zones = []
-    for x in range(120):
-        for y in range(75):
-            centered_x = x - 60
-            centered_y = y - 37
+    step = 3  # 3-yard grid = 40x25 = 1000 zones (much faster than 9000)
+    for x in range(0, 120, step):
+        for y in range(0, 75, step):
+            centered_x = x - 60 + step // 2
+            centered_y = y - 37 + step // 2
             xg = engine.xg_model.get_xg((centered_x, centered_y))
             zones.append({
                 'x': centered_x,
                 'y': centered_y,
                 'xg': float(xg),
-                'width': 1,
-                'height': 1,
+                'width': step,
+                'height': step,
             })
     return {
         'zones': zones,
         'pitch_length': 120,
         'pitch_width': 75,
-        'grid_resolution': 1,
+        'grid_resolution': step,
         'total_zones': len(zones),
     }
 

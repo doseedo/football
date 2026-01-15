@@ -169,7 +169,7 @@
 
 <script>
 // ============================================
-// DECISION ENGINE - JavaScript Port
+// DECISION ENGINE v2 - Smarter Passes & Movement
 // ============================================
 
 const PITCH_LENGTH = 105, PITCH_WIDTH = 68;
@@ -192,35 +192,89 @@ function pointToSegmentDist(p, a, b) {
     return dist(p, closest);
 }
 
-// Evaluate pass to a target player
+// Calculate how much space a player has (distance to nearest defender)
+function getPlayerSpace(player, defenders) {
+    let minDist = Infinity;
+    for (const def of defenders) {
+        const d = dist(player, def);
+        if (d < minDist) minDist = d;
+    }
+    return minDist;
+}
+
+// Check if player is the "free man" (most space)
+function findFreeMan(attackers, defenders, carrierId) {
+    let maxSpace = 0;
+    let freeMan = null;
+    for (const att of attackers) {
+        if (att.id === carrierId) continue;
+        const space = getPlayerSpace(att, defenders);
+        if (space > maxSpace) {
+            maxSpace = space;
+            freeMan = att;
+        }
+    }
+    return { player: freeMan, space: maxSpace };
+}
+
+// Calculate progressive distance (how much closer to goal)
+function progressiveValue(from, to) {
+    const fromGoalDist = dist(from, GOAL_POS);
+    const toGoalDist = dist(to, GOAL_POS);
+    return (fromGoalDist - toGoalDist) / fromGoalDist; // 0-1, higher = more progressive
+}
+
+// Evaluate pass to a target player - IMPROVED
 function evaluatePass(state, targetPlayer) {
     const from = state.ball;
     const to = targetPlayer;
     const passDist = dist(from, to);
 
-    // Distance factor: short passes more reliable
+    // 1. Distance factor: short passes more reliable
     const distFactor = Math.max(0.3, 1 - passDist / 50);
 
-    // Forward pass bonus
-    const isForward = to.x > from.x;
-    const valueMultiplier = isForward ? 1.2 : 0.8;
+    // 2. Receiver space - crucial factor
+    const receiverSpace = getPlayerSpace(to, state.defenders);
+    let spaceFactor = 1.0;
+    if (receiverSpace < 3) spaceFactor = 0.4;       // Very tight
+    else if (receiverSpace < 5) spaceFactor = 0.6;  // Under pressure
+    else if (receiverSpace < 8) spaceFactor = 0.8;  // Some space
+    else if (receiverSpace > 12) spaceFactor = 1.2; // Lots of space (bonus)
 
-    // Interception risk: check defenders near pass line
+    // 3. Progressive pass bonus
+    const progression = progressiveValue(from, to);
+    const progressBonus = progression > 0.1 ? 1 + progression * 0.5 : 0.8; // Up to 1.5x for very progressive
+
+    // 4. Free man bonus - if this player has the most space
+    const freeManInfo = findFreeMan(state.attackers, state.defenders, state.carrierId);
+    const isFreeMan = freeManInfo.player && freeManInfo.player.id === targetPlayer.id;
+    const freeManBonus = isFreeMan ? 1.15 : 1.0;
+
+    // 5. Interception risk: check defenders near pass line
     let interceptionRisk = 0;
     for (const def of state.defenders) {
         const perpDist = pointToSegmentDist(def, from, to);
-        if (perpDist < 2) interceptionRisk += 0.35;
-        else if (perpDist < 4) interceptionRisk += 0.15;
+        // Also consider if defender is moving toward the pass line
+        const defToFrom = dist(def, from);
+        const defToTo = dist(def, to);
+        const alongPass = defToFrom < passDist && defToTo < passDist;
+
+        if (perpDist < 2) interceptionRisk += alongPass ? 0.45 : 0.30;
+        else if (perpDist < 4) interceptionRisk += alongPass ? 0.20 : 0.12;
         else if (perpDist < 6) interceptionRisk += 0.05;
     }
 
-    const successProb = distFactor * (1 - Math.min(interceptionRisk, 0.85));
+    // 6. Passing into pressure penalty
+    const pressurePenalty = receiverSpace < 4 ? 0.15 : 0;
+    interceptionRisk += pressurePenalty;
 
-    // Value based on target position (closer to goal = better)
+    const successProb = Math.max(0.1, distFactor * spaceFactor * (1 - Math.min(interceptionRisk, 0.85)));
+
+    // Value based on target position and progression
     const distToGoal = dist(to, GOAL_POS);
     const positionValue = Math.max(0.1, 1 - distToGoal / 60);
-    const valueIfSuccess = positionValue * valueMultiplier;
-    const riskIfFail = 0.4;
+    const valueIfSuccess = positionValue * progressBonus * freeManBonus;
+    const riskIfFail = receiverSpace < 5 ? 0.5 : 0.35; // Higher risk if passing into pressure
 
     const expectedValue = successProb * valueIfSuccess - (1 - successProb) * riskIfFail;
 
@@ -231,7 +285,10 @@ function evaluatePass(state, targetPlayer) {
         successProb,
         expectedValue,
         valueIfSuccess,
-        riskIfFail
+        riskIfFail,
+        receiverSpace: receiverSpace.toFixed(1),
+        isFreeMan,
+        isProgressive: progression > 0.1
     };
 }
 
@@ -409,18 +466,169 @@ function executeAction(state, action) {
         }
     }
 
-    // Move defenders toward ball slightly
-    for (let i = 0; i < newState.defenders.length; i++) {
-        const def = newState.defenders[i];
-        const toBall = { x: newState.ball.x - def.x, y: newState.ball.y - def.y };
-        const d = norm(toBall);
-        if (d > 5) {
-            newState.defenders[i].x += (toBall.x / d) * 2;
-            newState.defenders[i].y += (toBall.y / d) * 1;
-        }
-    }
+    // ==========================================
+    // OFF-BALL MOVEMENT - Attackers reposition
+    // ==========================================
+    moveAttackersOffBall(newState);
+
+    // ==========================================
+    // DEFENDER AI - Better positioning
+    // ==========================================
+    moveDefenders(newState);
 
     return { newState, result, message, action };
+}
+
+// Off-ball movement for attackers
+function moveAttackersOffBall(state) {
+    const carrier = state.attackers.find(a => a.id === state.carrierId);
+    if (!carrier) return;
+
+    for (let i = 0; i < state.attackers.length; i++) {
+        const att = state.attackers[i];
+        if (att.id === state.carrierId) continue; // Carrier doesn't move
+
+        // Find nearest defender to this attacker
+        let nearestDef = null;
+        let nearestDefDist = Infinity;
+        for (const def of state.defenders) {
+            const d = dist(att, def);
+            if (d < nearestDefDist) {
+                nearestDefDist = d;
+                nearestDef = def;
+            }
+        }
+
+        // Movement logic based on situation
+        let moveX = 0, moveY = 0;
+        const currentSpace = nearestDefDist;
+
+        // 1. If too close to defender, move to create space
+        if (currentSpace < 5 && nearestDef) {
+            // Move away from nearest defender
+            const awayX = att.x - nearestDef.x;
+            const awayY = att.y - nearestDef.y;
+            const awayDist = Math.sqrt(awayX * awayX + awayY * awayY);
+            if (awayDist > 0.1) {
+                moveX += (awayX / awayDist) * 2;
+                moveY += (awayY / awayDist) * 1.5;
+            }
+        }
+
+        // 2. Support run - move toward ball carrier if far away
+        const distToCarrier = dist(att, carrier);
+        if (distToCarrier > 25 && att.x < carrier.x + 15) {
+            const toCarrier = { x: carrier.x - att.x, y: carrier.y - att.y };
+            const d = norm(toCarrier);
+            moveX += (toCarrier.x / d) * 1.5;
+            moveY += (toCarrier.y / d) * 1;
+        }
+
+        // 3. Forward run - if in front of ball and have space, move toward goal
+        if (att.x > carrier.x && currentSpace > 6 && att.x < HALF_LENGTH - 20) {
+            moveX += 2; // Run forward
+            // Slight movement toward center of goal
+            moveY += att.y > 0 ? -0.5 : 0.5;
+        }
+
+        // 4. Width - wingers should stay wide
+        if (Math.abs(att.y) > 15) {
+            // If winger, maintain width
+            const targetY = att.y > 0 ? Math.min(28, att.y + 1) : Math.max(-28, att.y - 1);
+            moveY += (targetY - att.y) * 0.3;
+        }
+
+        // 5. Don't bunch up with teammates
+        for (const other of state.attackers) {
+            if (other.id === att.id) continue;
+            const d = dist(att, other);
+            if (d < 8) {
+                const awayX = att.x - other.x;
+                const awayY = att.y - other.y;
+                const awayDist = Math.sqrt(awayX * awayX + awayY * awayY);
+                if (awayDist > 0.1) {
+                    moveX += (awayX / awayDist) * 0.5;
+                    moveY += (awayY / awayDist) * 0.5;
+                }
+            }
+        }
+
+        // Apply movement with limits
+        const maxMove = 3;
+        const moveDist = Math.sqrt(moveX * moveX + moveY * moveY);
+        if (moveDist > maxMove) {
+            moveX = (moveX / moveDist) * maxMove;
+            moveY = (moveY / moveDist) * maxMove;
+        }
+
+        state.attackers[i].x = Math.max(-HALF_LENGTH + 5, Math.min(HALF_LENGTH - 5, att.x + moveX));
+        state.attackers[i].y = Math.max(-HALF_WIDTH + 3, Math.min(HALF_WIDTH - 3, att.y + moveY));
+    }
+}
+
+// Smarter defender movement
+function moveDefenders(state) {
+    for (let i = 0; i < state.defenders.length; i++) {
+        const def = state.defenders[i];
+        let moveX = 0, moveY = 0;
+
+        // 1. Track nearest attacker (man marking)
+        let nearestAtt = null;
+        let nearestAttDist = Infinity;
+        for (const att of state.attackers) {
+            const d = dist(def, att);
+            if (d < nearestAttDist) {
+                nearestAttDist = d;
+                nearestAtt = att;
+            }
+        }
+
+        // 2. Move toward nearest attacker if they're close to ball
+        if (nearestAtt) {
+            const attToBall = dist(nearestAtt, state.ball);
+            if (attToBall < 20) {
+                const toAtt = { x: nearestAtt.x - def.x, y: nearestAtt.y - def.y };
+                const d = norm(toAtt);
+                if (d > 3) { // Don't get too close
+                    moveX += (toAtt.x / d) * 1.5;
+                    moveY += (toAtt.y / d) * 1;
+                }
+            }
+        }
+
+        // 3. Compress toward ball (defensive compactness)
+        const toBall = { x: state.ball.x - def.x, y: state.ball.y - def.y };
+        const ballDist = norm(toBall);
+        if (ballDist > 15 && def.x > state.ball.x) {
+            // Only move if behind the ball
+            moveX += (toBall.x / ballDist) * 1;
+            moveY += (toBall.y / ballDist) * 0.5;
+        }
+
+        // 4. Maintain defensive line - don't go past other defenders
+        const avgDefX = state.defenders.reduce((sum, d) => sum + d.x, 0) / state.defenders.length;
+        if (def.x < avgDefX - 5) {
+            moveX += 0.5; // Don't get caught too deep
+        }
+
+        // 5. Cover goal - CBs should stay central
+        if (Math.abs(def.y) < 15 && def.x > 25) {
+            // Central defender, stay between ball and goal
+            const coverY = state.ball.y * 0.3;
+            moveY += (coverY - def.y) * 0.2;
+        }
+
+        // Apply movement
+        const maxMove = 2.5;
+        const moveDist = Math.sqrt(moveX * moveX + moveY * moveY);
+        if (moveDist > maxMove) {
+            moveX = (moveX / moveDist) * maxMove;
+            moveY = (moveY / moveDist) * maxMove;
+        }
+
+        state.defenders[i].x = Math.max(-HALF_LENGTH + 5, Math.min(HALF_LENGTH - 3, def.x + moveX));
+        state.defenders[i].y = Math.max(-HALF_WIDTH + 3, Math.min(HALF_WIDTH - 3, def.y + moveY));
+    }
 }
 
 // Run full simulation
@@ -673,16 +881,24 @@ function updateActionList(frame) {
         return;
     }
 
-    list.innerHTML = frame.actions.map((a, i) => `
+    list.innerHTML = frame.actions.map((a, i) => {
+        let tags = '';
+        if (a.isFreeMan) tags += '<span style="background:#27ae60;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">FREE</span>';
+        if (a.isProgressive) tags += '<span style="background:#3498db;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">PROG</span>';
+        if (a.receiverSpace && parseFloat(a.receiverSpace) < 5) tags += '<span style="background:#e74c3c;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;">TIGHT</span>';
+
+        return `
         <div class="action-item ${a === highlightedAction ? 'selected' : ''}"
              onmouseenter="highlightAction(${i})" onmouseleave="clearHighlight()">
             <span class="action-type">${a.type}</span>
             <span class="action-value">${a.expectedValue.toFixed(3)}</span>
             <div style="color: #888; margin-top: 3px;">
                 ${a.targetPlayer || `(${a.target.x.toFixed(0)}, ${a.target.y.toFixed(0)})`} - ${(a.successProb * 100).toFixed(0)}%
+                ${a.receiverSpace ? ` (${a.receiverSpace}m)` : ''}
             </div>
+            <div style="margin-top: 3px;">${tags}</div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 function highlightAction(i) {

@@ -191,6 +191,255 @@ function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
 function norm(v) { return Math.sqrt(v.x * v.x + v.y * v.y); }
 function dot(a, b) { return a.x * b.x + a.y * b.y; }
 
+// ============================================
+// ZONE-BASED GOAL PLANNING
+// The engine identifies TARGET ZONES (high xG + space)
+// Then finds the best PATH to get a player there
+// ============================================
+
+// Calculate xG for any position on the pitch
+function getZoneXG(pos, defenders) {
+    const distToGoal = dist(pos, GOAL_POS);
+    if (distToGoal > 30) return 0; // Too far for meaningful xG
+
+    // Base xG from distance
+    let baseXG;
+    if (distToGoal < 5) baseXG = 0.75;
+    else if (distToGoal < 8) baseXG = 0.55;
+    else if (distToGoal < 11) baseXG = 0.40;
+    else if (distToGoal < 16) baseXG = 0.25;
+    else if (distToGoal < 20) baseXG = 0.15;
+    else if (distToGoal < 25) baseXG = 0.08;
+    else baseXG = 0.04;
+
+    // Angle factor
+    const angle = Math.abs(Math.atan2(pos.y, GOAL_POS.x - pos.x));
+    let angleFactor = 1.0;
+    if (angle > 0.8) angleFactor = 0.2;
+    else if (angle > 0.5) angleFactor = 0.5;
+    else if (angle > 0.3) angleFactor = 0.75;
+
+    // Space factor - how much room is there?
+    let spaceFactor = 1.0;
+    let nearestDef = Infinity;
+    for (const def of defenders) {
+        const d = dist(pos, def);
+        if (d < nearestDef) nearestDef = d;
+    }
+
+    // Boost for space, penalty for pressure
+    if (nearestDef < 2) spaceFactor = 0.2;
+    else if (nearestDef < 4) spaceFactor = 0.4;
+    else if (nearestDef < 6) spaceFactor = 0.6;
+    else if (nearestDef < 8) spaceFactor = 0.8;
+    else if (nearestDef > 10) spaceFactor = 1.5; // Open space boost
+    else if (nearestDef > 15) spaceFactor = 2.0; // Very open
+
+    return Math.min(0.95, baseXG * angleFactor * spaceFactor);
+}
+
+// Find the best scoring zones on the pitch
+function findScoringZones(state) {
+    const zones = [];
+
+    // Sample the attacking third in a grid
+    const xStart = HALF_LENGTH - 30; // Last 30m
+    const xEnd = HALF_LENGTH - 3;    // Not past goal line
+    const yStart = -20;              // Width of penalty area roughly
+    const yEnd = 20;
+
+    for (let x = xStart; x <= xEnd; x += 5) {
+        for (let y = yStart; y <= yEnd; y += 5) {
+            const pos = { x, y };
+            const xG = getZoneXG(pos, state.defenders);
+
+            if (xG > 0.05) { // Only consider zones with meaningful xG
+                zones.push({
+                    pos,
+                    xG,
+                    distToGoal: dist(pos, GOAL_POS)
+                });
+            }
+        }
+    }
+
+    // Sort by xG (best zones first)
+    zones.sort((a, b) => b.xG - a.xG);
+
+    // Return top zones (don't need all of them)
+    return zones.slice(0, 10);
+}
+
+// Check if a player can reach a zone (run into space)
+function canPlayerReachZone(player, zone, state, isCarrier) {
+    const runDist = dist(player, zone.pos);
+
+    // Can't run too far in one action
+    if (runDist > 15) return { canReach: false };
+
+    // If carrier, they'd have to dribble
+    if (isCarrier) {
+        // Check path for defenders
+        let blocked = false;
+        for (const def of state.defenders) {
+            const perpDist = pointToSegmentDist(def, player, zone.pos);
+            if (perpDist < 3 && def.x > player.x) {
+                blocked = true;
+                break;
+            }
+        }
+        return {
+            canReach: !blocked,
+            method: 'dribble',
+            distance: runDist,
+            probability: blocked ? 0.1 : Math.max(0.2, 0.8 - runDist / 20)
+        };
+    }
+
+    // Off-ball run - check if defender can catch them
+    let canRun = true;
+    for (const def of state.defenders) {
+        const defDist = dist(def, zone.pos);
+        // If defender is closer to zone, they'll get there first
+        if (defDist < runDist - 3) {
+            canRun = false;
+            break;
+        }
+    }
+
+    return {
+        canReach: canRun,
+        method: 'run',
+        distance: runDist,
+        probability: canRun ? 0.9 : 0.3
+    };
+}
+
+// Check if we can pass to a zone (pass into space or to player)
+function canPassToZone(state, zone) {
+    const from = state.ball;
+    const to = zone.pos;
+    const passDist = dist(from, to);
+
+    if (passDist > MAX_PASS_DISTANCE) return { canPass: false };
+
+    // Check for interceptions
+    let interceptProb = 0;
+    for (const def of state.defenders) {
+        const perpDist = pointToSegmentDist(def, from, to);
+        if (perpDist < 2) interceptProb += 0.4;
+        else if (perpDist < 4) interceptProb += 0.2;
+        else if (perpDist < 6) interceptProb += 0.1;
+    }
+
+    const successProb = Math.max(0.1, 1 - interceptProb);
+
+    return {
+        canPass: successProb > 0.3,
+        successProb,
+        distance: passDist
+    };
+}
+
+// Find best path to get a player into a zone
+function findPathToZone(state, zone) {
+    const paths = [];
+    const carrier = state.attackers.find(a => a.id === state.carrierId);
+
+    // Option 1: Carrier dribbles to zone
+    if (carrier) {
+        const dribblePath = canPlayerReachZone(carrier, zone, state, true);
+        if (dribblePath.canReach) {
+            paths.push({
+                type: 'dribble',
+                player: carrier.id,
+                zone: zone.pos,
+                xG: zone.xG,
+                probability: dribblePath.probability,
+                expectedXG: zone.xG * dribblePath.probability,
+                steps: 1
+            });
+        }
+    }
+
+    // Option 2: Pass to player already near zone
+    for (const attacker of state.attackers) {
+        if (attacker.id === state.carrierId) continue;
+
+        const playerDistToZone = dist(attacker, zone.pos);
+        if (playerDistToZone < 8) {
+            // Player is near the zone - can we pass to them?
+            const passCheck = canPassToZone(state, { pos: attacker });
+            if (passCheck.canPass) {
+                paths.push({
+                    type: 'pass',
+                    player: attacker.id,
+                    zone: zone.pos,
+                    xG: zone.xG,
+                    probability: passCheck.successProb,
+                    expectedXG: zone.xG * passCheck.successProb,
+                    steps: 1
+                });
+            }
+        }
+    }
+
+    // Option 3: Pass to player who can then move to zone
+    for (const attacker of state.attackers) {
+        if (attacker.id === state.carrierId) continue;
+
+        const passCheck = canPassToZone(state, { pos: attacker });
+        if (!passCheck.canPass) continue;
+
+        // After receiving, can they reach the zone?
+        const runCheck = canPlayerReachZone(attacker, zone, state, false);
+        if (runCheck.canReach) {
+            const combinedProb = passCheck.successProb * runCheck.probability;
+            paths.push({
+                type: 'pass-then-move',
+                player: attacker.id,
+                zone: zone.pos,
+                xG: zone.xG,
+                probability: combinedProb,
+                expectedXG: zone.xG * combinedProb,
+                steps: 2,
+                passProb: passCheck.successProb,
+                moveProb: runCheck.probability
+            });
+        }
+    }
+
+    // Sort by expected xG (best paths first)
+    paths.sort((a, b) => b.expectedXG - a.expectedXG);
+
+    return paths.length > 0 ? paths[0] : null;
+}
+
+// MAIN: Find the best play (zone + path combination)
+function findBestPlay(state) {
+    // 1. Find best scoring zones
+    const zones = findScoringZones(state);
+
+    // 2. For each zone, find the best path to get there
+    const plays = [];
+    for (const zone of zones) {
+        const path = findPathToZone(state, zone);
+        if (path) {
+            plays.push({
+                zone,
+                path,
+                score: path.expectedXG
+            });
+        }
+    }
+
+    // 3. Sort by expected xG
+    plays.sort((a, b) => b.score - a.score);
+
+    // Return all viable plays (for display), best first
+    return plays;
+}
+
 // Get angle between two points
 function angleBetween(from, to) {
     return Math.atan2(to.y - from.y, to.x - from.x);
@@ -1350,6 +1599,95 @@ function drawPitch() {
     ctx.lineWidth = 2;
 }
 
+// Draw xG heatmap zones on the pitch
+function drawScoringZones(state, bestPlay) {
+    if (!state) return;
+
+    const zones = findScoringZones(state);
+
+    // Draw all zones as semi-transparent circles (heatmap effect)
+    for (const zone of zones) {
+        const pos = pitchToCanvas(zone.pos.x, zone.pos.y);
+
+        // Color based on xG: red = high, yellow = medium, green = low
+        const intensity = Math.min(1, zone.xG * 2);
+        const r = Math.floor(255 * intensity);
+        const g = Math.floor(255 * (1 - intensity * 0.5));
+        const b = 50;
+
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 15 + zone.xG * 20, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.2 + zone.xG * 0.3})`;
+        ctx.fill();
+    }
+
+    // Highlight the best zone with a ring
+    if (bestPlay && bestPlay.zone) {
+        const pos = pitchToCanvas(bestPlay.zone.pos.x, bestPlay.zone.pos.y);
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 20, 0, Math.PI * 2);
+        ctx.strokeStyle = '#f1c40f';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Label with xG
+        ctx.fillStyle = '#f1c40f';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${(bestPlay.zone.xG * 100).toFixed(0)}%`, pos.x, pos.y - 25);
+    }
+}
+
+// Draw the path to the target zone
+function drawBestPath(state, bestPlay) {
+    if (!bestPlay || !bestPlay.path) return;
+
+    const path = bestPlay.path;
+    const carrier = state.attackers.find(a => a.id === state.carrierId);
+    if (!carrier) return;
+
+    const from = pitchToCanvas(carrier.x, carrier.y);
+    const to = pitchToCanvas(path.zone.x, path.zone.y);
+
+    // Draw path line
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+
+    if (path.type === 'pass' || path.type === 'pass-then-move') {
+        // Find the player receiving
+        const receiver = state.attackers.find(a => a.id === path.player);
+        if (receiver) {
+            const recv = pitchToCanvas(receiver.x, receiver.y);
+            ctx.lineTo(recv.x, recv.y);
+
+            // If pass-then-move, show the run to zone
+            if (path.type === 'pass-then-move') {
+                ctx.strokeStyle = 'rgba(0, 188, 212, 0.8)';
+                ctx.setLineDash([5, 5]);
+                ctx.lineTo(to.x, to.y);
+            }
+        }
+    } else if (path.type === 'dribble') {
+        ctx.lineTo(to.x, to.y);
+    }
+
+    ctx.strokeStyle = path.type === 'dribble' ? 'rgba(156, 39, 176, 0.8)' : 'rgba(76, 175, 80, 0.8)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Arrow at end
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - 12 * Math.cos(angle - 0.4), to.y - 12 * Math.sin(angle - 0.4));
+    ctx.lineTo(to.x - 12 * Math.cos(angle + 0.4), to.y - 12 * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fill();
+}
+
 function drawPlayer(x, y, color, label, hasBall, isSelected) {
     const pos = pitchToCanvas(x, y);
 
@@ -1400,10 +1738,19 @@ function drawAction(from, to, result, isHighlighted) {
     ctx.fillStyle = ctx.strokeStyle; ctx.fill();
 }
 
+let showZones = true; // Toggle for zone visualization
+
 function render() {
     drawPitch();
 
     if (currentTab === 'editor') {
+        // Show zones in editor too when we have enough players
+        if (editorState.attackers.length > 0 && editorState.defenders.length > 0 && editorState.carrierId && showZones) {
+            const plays = findBestPlay(editorState);
+            const bestPlay = plays.length > 0 ? plays[0] : null;
+            drawScoringZones(editorState, bestPlay);
+            drawBestPath(editorState, bestPlay);
+        }
         renderEditor();
         return;
     }
@@ -1412,6 +1759,14 @@ function render() {
 
     const frame = frames[currentFrame];
     const st = frame.state;
+
+    // Draw scoring zones and best path
+    if (showZones && st.carrierId) {
+        const plays = findBestPlay(st);
+        const bestPlay = plays.length > 0 ? plays[0] : null;
+        drawScoringZones(st, bestPlay);
+        drawBestPath(st, bestPlay);
+    }
 
     // Draw actions
     if (highlightedAction) {

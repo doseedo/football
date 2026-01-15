@@ -457,16 +457,16 @@ function evaluateShot(state) {
     // xG CALCULATION - Based on real xG models
     // ========================================
 
-    // 1. BASE xG from distance (exponential decay)
-    // Close range (~5m) = ~0.6 xG, penalty spot (11m) = ~0.35, edge of box (16m) = ~0.15
+    // 1. BASE xG from distance (these are BASE values - get multiplied by pressure factor)
+    // An unmarked shot will be boosted 2-2.5x, so a 20m unmarked shot = 0.15 * 2.5 = 37.5%
     let baseXG;
-    if (distToGoal < 5) baseXG = 0.65;
-    else if (distToGoal < 8) baseXG = 0.45;
-    else if (distToGoal < 11) baseXG = 0.35; // Penalty spot range
-    else if (distToGoal < 16) baseXG = 0.20;
-    else if (distToGoal < 20) baseXG = 0.10;
-    else if (distToGoal < 25) baseXG = 0.05;
-    else baseXG = 0.02; // Long range
+    if (distToGoal < 5) baseXG = 0.75;      // Tap-in range
+    else if (distToGoal < 8) baseXG = 0.55;  // Close range
+    else if (distToGoal < 11) baseXG = 0.40; // Penalty spot range
+    else if (distToGoal < 16) baseXG = 0.25; // Edge of box
+    else if (distToGoal < 20) baseXG = 0.15; // Just outside box
+    else if (distToGoal < 25) baseXG = 0.08; // Long range
+    else baseXG = 0.04; // Very long range
 
     // 2. ANGLE factor - central shots worth more
     // Calculate angle to goal center
@@ -481,11 +481,16 @@ function evaluateShot(state) {
     else if (angleToGoalCenter < 0.8) angleFactor = 0.40;
     else angleFactor = 0.20; // Very tight angle
 
-    // 3. DEFENDER PRESSURE - reduces xG significantly
-    let defenderPressure = 1.0; // 1.0 = no pressure, lower = more pressure
+    // 3. DEFENDER PRESSURE - affects xG significantly
+    // defenderPressure > 1.0 = unmarked (BOOST), < 1.0 = pressured (reduce)
+    let defenderPressure = 1.0;
+    let nearestDefenderDist = Infinity;
+    let defendersClose = 0; // Count defenders within 10m
 
     for (const def of state.defenders) {
         const defDist = dist(from, def);
+        if (defDist < nearestDefenderDist) nearestDefenderDist = defDist;
+        if (defDist < 10) defendersClose++;
 
         // Close defender reduces xG
         if (defDist < 1.5) defenderPressure *= 0.3; // Defender right on you
@@ -501,6 +506,16 @@ function evaluateShot(state) {
             else if (perpDist < 3) defenderPressure *= 0.6;
             else if (perpDist < 5) defenderPressure *= 0.8;
         }
+    }
+
+    // BOOST for being unmarked - time to pick your spot
+    // No defenders within 10m = huge boost
+    if (defendersClose === 0) {
+        defenderPressure *= 2.5; // Completely unmarked - much easier shot
+    } else if (nearestDefenderDist > 8) {
+        defenderPressure *= 1.8; // Lots of space
+    } else if (nearestDefenderDist > 5) {
+        defenderPressure *= 1.3; // Good space
     }
 
     // 4. COUNT defenders between ball and goal

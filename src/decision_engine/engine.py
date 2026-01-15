@@ -343,17 +343,19 @@ class XGZoneModel:
 
         120 x 75 grid = 9000 zones (one per square yard)
         Values represent probability of scoring if a shot is taken from that zone.
+        Grid uses corner-based coordinates: (0,0) = bottom-left, (120,75) = top-right
+        Attacking goal is at x=120, y=37.5 (center)
         """
         xg = np.zeros((self.grid_y, self.grid_x))
 
-        # Goal position (center of goal at x=60, y=37.5)
-        goal_x = PITCH_LENGTH / 2  # 60 yards
+        # Goal position - attacking goal at far end of pitch
+        goal_x = PITCH_LENGTH  # 120 yards (goal line)
         goal_y = PITCH_WIDTH / 2   # 37.5 yards (center)
         goal_width = 8  # yards (standard goal width)
 
         for i in range(self.grid_x):
             for j in range(self.grid_y):
-                # Position in yards (0,0 = corner, 60,37.5 = center)
+                # Position in yards (0,0 = corner, 120,37.5 = goal center)
                 x = i + 0.5  # center of yard square
                 y = j + 0.5
 
@@ -376,8 +378,8 @@ class XGZoneModel:
                     continue
 
                 # Base xG from distance (based on historical data)
-                # Values calibrated to real-world xG data
-                dist_from_goal = goal_x - x  # How far from goal line
+                # Distance from goal line
+                dist_from_goal = goal_x - x
 
                 if dist_from_goal <= 6:  # 6-yard box
                     base_xg = 0.40  # Very high conversion rate
@@ -418,23 +420,19 @@ class XGZoneModel:
         Get xG value for a pitch position.
 
         Args:
-            position: (x, y) in yards, where (0, 0) is bottom-left corner
-                      OR coordinates centered on pitch (will be converted)
+            position: (x, y) in centered coordinates where (0, 0) is pitch center
+                      x ranges from -60 to 60, y ranges from -37.5 to 37.5
 
         Returns:
             xG value (probability of goal if shot taken from here)
         """
         x, y = position
 
-        # Convert from centered coordinates to corner-based
-        # If x is negative, assume centered coordinates
-        if x < 0:
-            x = x + PITCH_LENGTH / 2
-            y = y + PITCH_WIDTH / 2
-
-        # Convert to grid indices
-        grid_x = int(x)
-        grid_y = int(y)
+        # Convert from centered coordinates to corner-based (grid coordinates)
+        # Centered: (-60, -37.5) to (60, 37.5)
+        # Corner:   (0, 0) to (120, 75)
+        grid_x = int(x + PITCH_LENGTH / 2)
+        grid_y = int(y + PITCH_WIDTH / 2)
 
         # Clip to bounds
         grid_x = np.clip(grid_x, 0, self.grid_x - 1)
@@ -682,7 +680,7 @@ class ShotModel:
         Calculate shot success probability.
 
         Args:
-            shooter_pos: Shooter position (x, y) - can be centered or corner-based
+            shooter_pos: Shooter position (x, y) in centered coordinates
             defenders: List of defending outfield players
             goalkeeper: Goalkeeper state (if any)
 
@@ -691,10 +689,11 @@ class ShotModel:
         """
         x, y = shooter_pos
 
-        # Convert from centered coordinates if needed
-        if x < 0:
-            x = x + PITCH_LENGTH / 2
-            y = y + PITCH_WIDTH / 2
+        # Convert from centered coordinates to corner-based
+        # Centered: (-60, -37.5) to (60, 37.5)
+        # Corner:   (0, 0) to (120, 75)
+        x = x + PITCH_LENGTH / 2
+        y = y + PITCH_WIDTH / 2
 
         # Step 1: Base xG from position
         base_xg = self._position_xg((x, y))
@@ -799,10 +798,9 @@ class ShotModel:
                 continue  # Goalkeeper handled separately
 
             def_x, def_y = defender.position
-            # Convert defender position if centered
-            if def_x < 0:
-                def_x = def_x + PITCH_LENGTH / 2
-                def_y = def_y + PITCH_WIDTH / 2
+            # Convert defender position from centered to corner-based
+            def_x = def_x + PITCH_LENGTH / 2
+            def_y = def_y + PITCH_WIDTH / 2
 
             # Vector from shooter to defender
             def_vector = np.array([def_x - x, def_y - y])
@@ -861,10 +859,9 @@ class ShotModel:
         x, y = shooter_pos
         gk_x, gk_y = goalkeeper.position
 
-        # Convert if centered coordinates
-        if gk_x < 0:
-            gk_x = gk_x + PITCH_LENGTH / 2
-            gk_y = gk_y + PITCH_WIDTH / 2
+        # Convert from centered to corner-based coordinates
+        gk_x = gk_x + PITCH_LENGTH / 2
+        gk_y = gk_y + PITCH_WIDTH / 2
 
         goal_y = PITCH_WIDTH / 2
 

@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decision Engine - Tactical Board</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        /* Pitch area */
+        .pitch-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            color: #00d4ff;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            background: #00d4ff;
+            color: #1a1a2e;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #00a8cc;
+            transform: translateY(-1px);
+        }
+
+        button.secondary {
+            background: #444;
+            color: #eee;
+        }
+
+        button.secondary:hover {
+            background: #555;
+        }
+
+        #pitch {
+            flex: 1;
+            background: #2d5a27;
+            border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+            cursor: crosshair;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .instructions {
+            font-size: 0.85rem;
+            color: #888;
+            text-align: center;
+        }
+
+        /* Analysis panel */
+        .analysis-panel {
+            width: 350px;
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel-section {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .panel-section h3 {
+            color: #00d4ff;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            color: #888;
+        }
+
+        .stat-value {
+            font-weight: 600;
+        }
+
+        .stat-value.positive { color: #4ade80; }
+        .stat-value.negative { color: #f87171; }
+        .stat-value.neutral { color: #fbbf24; }
+
+        /* Gaps list */
+        .gap-item {
+            background: #222;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-left: 3px solid #fbbf24;
+        }
+
+        .gap-item.exploitable {
+            border-left-color: #4ade80;
+        }
+
+        .gap-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .gap-title {
+            font-weight: 600;
+        }
+
+        .gap-badge {
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: #4ade80;
+            color: #000;
+        }
+
+        .gap-badge.covered {
+            background: #666;
+            color: #fff;
+        }
+
+        .gap-details {
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        /* Options list */
+        .option-item {
+            background: #222;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .option-item:hover {
+            background: #2a2a3a;
+        }
+
+        .option-item.best {
+            border: 2px solid #00d4ff;
+        }
+
+        .option-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .option-type {
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+        }
+
+        .option-rec {
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        .option-rec.HIGH_VALUE { background: #4ade80; color: #000; }
+        .option-rec.SAFE { background: #00d4ff; color: #000; }
+        .option-rec.MODERATE { background: #fbbf24; color: #000; }
+        .option-rec.LOW_VALUE { background: #f97316; color: #000; }
+        .option-rec.AVOID { background: #f87171; color: #000; }
+
+        .option-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        /* Best option highlight */
+        .best-option {
+            background: linear-gradient(135deg, #16213e, #1a1a2e);
+            border: 2px solid #00d4ff;
+        }
+
+        .best-option h3 {
+            color: #4ade80;
+        }
+
+        /* Toggle switches */
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #444;
+            transition: 0.3s;
+            border-radius: 24px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: #00d4ff;
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+
+        /* Loading state */
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="pitch-container">
+            <div class="header">
+                <h1>Decision Engine</h1>
+                <div class="controls">
+                    <button onclick="runAnalysis()">Analyze</button>
+                    <button class="secondary" onclick="resetScenario()">Reset</button>
+                </div>
+            </div>
+            <div id="pitch">
+                <canvas id="canvas"></canvas>
+            </div>
+            <p class="instructions">Click to move ball | Drag players to reposition | Toggle layers on right panel</p>
+        </div>
+
+        <div class="analysis-panel">
+            <div class="panel-section">
+                <h3>Display Options</h3>
+                <div class="toggle-row">
+                    <span>Show Gaps</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="showGaps" checked onchange="render()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-row">
+                    <span>Show Best Option</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="showBestOption" checked onchange="render()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-row">
+                    <span>Show All Options</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="showAllOptions" onchange="render()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3>Summary</h3>
+                <div class="stat-row">
+                    <span class="stat-label">Ball Position</span>
+                    <span class="stat-value" id="ballPos">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Total Options</span>
+                    <span class="stat-value" id="totalOptions">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">High Value</span>
+                    <span class="stat-value positive" id="highValueOptions">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Safe Options</span>
+                    <span class="stat-value neutral" id="safeOptions">-</span>
+                </div>
+            </div>
+
+            <div class="panel-section best-option" id="bestOptionPanel" style="display: none;">
+                <h3>Recommended Action</h3>
+                <div id="bestOptionContent"></div>
+            </div>
+
+            <div class="panel-section">
+                <h3>Defensive Gaps</h3>
+                <div id="gapsList">
+                    <div class="loading">Click "Analyze" to detect gaps</div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3>Top Options</h3>
+                <div id="optionsList">
+                    <div class="loading">Click "Analyze" to see options</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Pitch dimensions
+        const PITCH_LENGTH = 105;
+        const PITCH_WIDTH = 68;
+        const PADDING = 10;
+
+        // State
+        let state = { players: [], ball: { x: 0, y: 0 } };
+        let analysis = null;
+        let canvas, ctx;
+        let draggingPlayer = null;
+        let scale = 1;
+        let offsetX = 0, offsetY = 0;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            canvas.addEventListener('mousedown', onMouseDown);
+            canvas.addEventListener('mousemove', onMouseMove);
+            canvas.addEventListener('mouseup', onMouseUp);
+            canvas.addEventListener('click', onClick);
+
+            loadState();
+        });
+
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+
+            // Calculate scale to fit pitch
+            const scaleX = (canvas.width - PADDING * 2) / PITCH_LENGTH;
+            const scaleY = (canvas.height - PADDING * 2) / PITCH_WIDTH;
+            scale = Math.min(scaleX, scaleY);
+
+            offsetX = (canvas.width - PITCH_LENGTH * scale) / 2;
+            offsetY = (canvas.height - PITCH_WIDTH * scale) / 2;
+
+            render();
+        }
+
+        // Coordinate conversion
+        function pitchToCanvas(x, y) {
+            return {
+                x: offsetX + (x + PITCH_LENGTH / 2) * scale,
+                y: offsetY + (PITCH_WIDTH / 2 - y) * scale
+            };
+        }
+
+        function canvasToPitch(cx, cy) {
+            return {
+                x: (cx - offsetX) / scale - PITCH_LENGTH / 2,
+                y: PITCH_WIDTH / 2 - (cy - offsetY) / scale
+            };
+        }
+
+        // Load state from server
+        async function loadState() {
+            try {
+                const res = await fetch('/api/state');
+                state = await res.json();
+                render();
+            } catch (e) {
+                console.error('Failed to load state:', e);
+            }
+        }
+
+        // Run analysis
+        async function runAnalysis() {
+            try {
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ball_x: state.ball.x,
+                        ball_y: state.ball.y,
+                    })
+                });
+                analysis = await res.json();
+                updateAnalysisPanel();
+                render();
+            } catch (e) {
+                console.error('Analysis failed:', e);
+            }
+        }
+
+        // Reset scenario
+        async function resetScenario() {
+            await fetch('/api/reset', { method: 'POST' });
+            analysis = null;
+            await loadState();
+            updateAnalysisPanel();
+        }
+
+        // Update analysis panel
+        function updateAnalysisPanel() {
+            document.getElementById('ballPos').textContent =
+                `(${state.ball.x.toFixed(1)}, ${state.ball.y.toFixed(1)})`;
+
+            if (!analysis) {
+                document.getElementById('totalOptions').textContent = '-';
+                document.getElementById('highValueOptions').textContent = '-';
+                document.getElementById('safeOptions').textContent = '-';
+                document.getElementById('gapsList').innerHTML = '<div class="loading">Click "Analyze" to detect gaps</div>';
+                document.getElementById('optionsList').innerHTML = '<div class="loading">Click "Analyze" to see options</div>';
+                document.getElementById('bestOptionPanel').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('totalOptions').textContent = analysis.total_options;
+            document.getElementById('highValueOptions').textContent = analysis.high_value_options;
+            document.getElementById('safeOptions').textContent = analysis.safe_options;
+
+            // Gaps
+            let gapsHtml = '';
+            analysis.gaps.slice(0, 5).forEach((gap, i) => {
+                const expClass = gap.exploitable ? 'exploitable' : '';
+                const badgeClass = gap.exploitable ? '' : 'covered';
+                const badgeText = gap.exploitable ? 'EXPLOITABLE' : 'COVERED';
+                gapsHtml += `
+                    <div class="gap-item ${expClass}">
+                        <div class="gap-header">
+                            <span class="gap-title">Gap ${i + 1}</span>
+                            <span class="gap-badge ${badgeClass}">${badgeText}</span>
+                        </div>
+                        <div class="gap-details">
+                            Size: ${gap.size.toFixed(1)}m |
+                            Close: ${gap.time_to_close.toFixed(1)}s |
+                            xG: ${gap.xg.toFixed(3)}
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('gapsList').innerHTML = gapsHtml || '<div class="loading">No gaps detected</div>';
+
+            // Options
+            let optionsHtml = '';
+            analysis.options.slice(0, 5).forEach((opt, i) => {
+                const isBest = analysis.best_option &&
+                    opt.target_x === analysis.best_option.target_x &&
+                    opt.target_y === analysis.best_option.target_y;
+                optionsHtml += `
+                    <div class="option-item ${isBest ? 'best' : ''}" onclick="highlightOption(${i})">
+                        <div class="option-header">
+                            <span class="option-type">${opt.action}${opt.target_player ? ' → #' + opt.target_player : ''}</span>
+                            <span class="option-rec ${opt.recommendation}">${opt.recommendation}</span>
+                        </div>
+                        <div class="option-stats">
+                            <span>Success: ${(opt.success_prob * 100).toFixed(0)}%</span>
+                            <span>xG Gain: ${opt.xg_gain >= 0 ? '+' : ''}${opt.xg_gain.toFixed(3)}</span>
+                            <span>Intercept: ${(opt.intercept_prob * 100).toFixed(0)}%</span>
+                            <span>EV: ${opt.ev >= 0 ? '+' : ''}${opt.ev.toFixed(4)}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('optionsList').innerHTML = optionsHtml || '<div class="loading">No options available</div>';
+
+            // Best option
+            if (analysis.best_option) {
+                const opt = analysis.best_option;
+                document.getElementById('bestOptionPanel').style.display = 'block';
+                document.getElementById('bestOptionContent').innerHTML = `
+                    <div class="stat-row">
+                        <span class="stat-label">Action</span>
+                        <span class="stat-value">${opt.action.toUpperCase()}</span>
+                    </div>
+                    ${opt.target_player ? `
+                    <div class="stat-row">
+                        <span class="stat-label">Target</span>
+                        <span class="stat-value">Player #${opt.target_player}</span>
+                    </div>
+                    ` : ''}
+                    <div class="stat-row">
+                        <span class="stat-label">Success</span>
+                        <span class="stat-value">${(opt.success_prob * 100).toFixed(0)}%</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Expected Value</span>
+                        <span class="stat-value ${opt.ev >= 0 ? 'positive' : 'negative'}">${opt.ev >= 0 ? '+' : ''}${opt.ev.toFixed(4)}</span>
+                    </div>
+                `;
+            } else {
+                document.getElementById('bestOptionPanel').style.display = 'none';
+            }
+        }
+
+        // Render pitch
+        function render() {
+            if (!ctx) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw pitch
+            drawPitch();
+
+            // Draw gaps if enabled
+            if (document.getElementById('showGaps').checked && analysis) {
+                drawGaps();
+            }
+
+            // Draw options if enabled
+            if (document.getElementById('showAllOptions').checked && analysis) {
+                drawAllOptions();
+            }
+
+            // Draw best option if enabled
+            if (document.getElementById('showBestOption').checked && analysis && analysis.best_option) {
+                drawBestOption();
+            }
+
+            // Draw players
+            drawPlayers();
+
+            // Draw ball
+            drawBall();
+        }
+
+        function drawPitch() {
+            const tl = pitchToCanvas(-PITCH_LENGTH/2, PITCH_WIDTH/2);
+            const br = pitchToCanvas(PITCH_LENGTH/2, -PITCH_WIDTH/2);
+
+            // Pitch background
+            ctx.fillStyle = '#2d5a27';
+            ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+            ctx.lineWidth = 2;
+
+            // Outline
+            ctx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+
+            // Center line
+            const center = pitchToCanvas(0, 0);
+            ctx.beginPath();
+            ctx.moveTo(center.x, tl.y);
+            ctx.lineTo(center.x, br.y);
+            ctx.stroke();
+
+            // Center circle
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, 9.15 * scale, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Penalty areas
+            const boxWidth = 40.3, boxDepth = 16.5;
+
+            // Left box
+            const lb = pitchToCanvas(-PITCH_LENGTH/2 + boxDepth, boxWidth/2);
+            const lbSize = { w: boxDepth * scale, h: boxWidth * scale };
+            ctx.strokeRect(tl.x, lb.y, lbSize.w, lbSize.h);
+
+            // Right box
+            const rb = pitchToCanvas(PITCH_LENGTH/2 - boxDepth, boxWidth/2);
+            ctx.strokeRect(rb.x, rb.y, lbSize.w, lbSize.h);
+
+            // Goals
+            ctx.lineWidth = 3;
+            const goalWidth = 7.32;
+            const gl = pitchToCanvas(-PITCH_LENGTH/2, goalWidth/2);
+            const gr = pitchToCanvas(PITCH_LENGTH/2, goalWidth/2);
+            ctx.strokeStyle = '#fff';
+            ctx.beginPath();
+            ctx.moveTo(gl.x - 5, gl.y);
+            ctx.lineTo(gl.x - 5, gl.y + goalWidth * scale);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(gr.x + 5, gr.y);
+            ctx.lineTo(gr.x + 5, gr.y + goalWidth * scale);
+            ctx.stroke();
+        }
+
+        function drawPlayers() {
+            state.players.forEach(p => {
+                const pos = pitchToCanvas(p.x, p.y);
+                const radius = 12;
+
+                // Player circle
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+                ctx.fillStyle = p.team === 0 ? '#3b82f6' : '#ef4444';
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Jersey number
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(p.id.toString(), pos.x, pos.y);
+            });
+        }
+
+        function drawBall() {
+            const pos = pitchToCanvas(state.ball.x, state.ball.y);
+
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        function drawGaps() {
+            analysis.gaps.forEach(gap => {
+                const pos = pitchToCanvas(gap.x, gap.y);
+                const radius = (gap.size / 2) * scale;
+
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+                ctx.fillStyle = gap.exploitable ? 'rgba(74, 222, 128, 0.3)' : 'rgba(251, 191, 36, 0.2)';
+                ctx.fill();
+                ctx.strokeStyle = gap.exploitable ? '#4ade80' : '#fbbf24';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            });
+        }
+
+        function drawBestOption() {
+            const opt = analysis.best_option;
+            const from = pitchToCanvas(state.ball.x, state.ball.y);
+            const to = pitchToCanvas(opt.target_x, opt.target_y);
+
+            // Arrow
+            ctx.beginPath();
+            ctx.moveTo(from.x, from.y);
+            ctx.lineTo(to.x, to.y);
+            ctx.strokeStyle = '#00d4ff';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Arrowhead
+            const angle = Math.atan2(to.y - from.y, to.x - from.x);
+            const headLen = 15;
+            ctx.beginPath();
+            ctx.moveTo(to.x, to.y);
+            ctx.lineTo(to.x - headLen * Math.cos(angle - Math.PI/6), to.y - headLen * Math.sin(angle - Math.PI/6));
+            ctx.lineTo(to.x - headLen * Math.cos(angle + Math.PI/6), to.y - headLen * Math.sin(angle + Math.PI/6));
+            ctx.closePath();
+            ctx.fillStyle = '#00d4ff';
+            ctx.fill();
+
+            // Label
+            const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+            ctx.fillStyle = '#00d4ff';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${(opt.success_prob * 100).toFixed(0)}%`, mid.x, mid.y - 10);
+        }
+
+        function drawAllOptions() {
+            analysis.options.slice(0, 5).forEach((opt, i) => {
+                const from = pitchToCanvas(state.ball.x, state.ball.y);
+                const to = pitchToCanvas(opt.target_x, opt.target_y);
+
+                const colors = {
+                    'HIGH_VALUE': '#4ade80',
+                    'SAFE': '#00d4ff',
+                    'MODERATE': '#fbbf24',
+                    'LOW_VALUE': '#f97316',
+                    'AVOID': '#f87171'
+                };
+                const color = colors[opt.recommendation] || '#888';
+
+                ctx.beginPath();
+                ctx.moveTo(from.x, from.y);
+                ctx.lineTo(to.x, to.y);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.globalAlpha = 0.6;
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            });
+        }
+
+        // Mouse handling
+        function onClick(e) {
+            const rect = canvas.getBoundingClientRect();
+            const cx = e.clientX - rect.left;
+            const cy = e.clientY - rect.top;
+            const pitch = canvasToPitch(cx, cy);
+
+            // Check bounds
+            if (Math.abs(pitch.x) <= PITCH_LENGTH/2 && Math.abs(pitch.y) <= PITCH_WIDTH/2) {
+                // Move ball
+                state.ball.x = pitch.x;
+                state.ball.y = pitch.y;
+
+                fetch('/api/move_ball', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x: pitch.x, y: pitch.y })
+                });
+
+                render();
+                runAnalysis();
+            }
+        }
+
+        function onMouseDown(e) {
+            const rect = canvas.getBoundingClientRect();
+            const cx = e.clientX - rect.left;
+            const cy = e.clientY - rect.top;
+
+            // Check if clicking on a player
+            state.players.forEach(p => {
+                const pos = pitchToCanvas(p.x, p.y);
+                const dist = Math.sqrt((cx - pos.x)**2 + (cy - pos.y)**2);
+                if (dist < 15) {
+                    draggingPlayer = p;
+                    e.preventDefault();
+                }
+            });
+        }
+
+        function onMouseMove(e) {
+            if (!draggingPlayer) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const cx = e.clientX - rect.left;
+            const cy = e.clientY - rect.top;
+            const pitch = canvasToPitch(cx, cy);
+
+            // Clamp to pitch
+            pitch.x = Math.max(-PITCH_LENGTH/2, Math.min(PITCH_LENGTH/2, pitch.x));
+            pitch.y = Math.max(-PITCH_WIDTH/2, Math.min(PITCH_WIDTH/2, pitch.y));
+
+            draggingPlayer.x = pitch.x;
+            draggingPlayer.y = pitch.y;
+            render();
+        }
+
+        function onMouseUp(e) {
+            if (draggingPlayer) {
+                fetch('/api/move_player', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        player_id: draggingPlayer.id,
+                        team: draggingPlayer.team,
+                        x: draggingPlayer.x,
+                        y: draggingPlayer.y
+                    })
+                }).then(() => runAnalysis());
+
+                draggingPlayer = null;
+            }
+        }
+
+        function highlightOption(index) {
+            // Could add highlighting logic here
+            console.log('Highlight option', index);
+        }
+    </script>
+</body>
+</html>

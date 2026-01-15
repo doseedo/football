@@ -54,7 +54,20 @@ from .block_models import (
     MID_BLOCK,
     HIGH_BLOCK,
 )
-from .visualizer import DecisionEngineVisualizer
+# Visualizer requires numpy/matplotlib - import conditionally
+try:
+    from .visualizer import DecisionEngineVisualizer
+except ImportError:
+    DecisionEngineVisualizer = None  # Not available without numpy
+
+from .action_executor import (
+    ActionExecutor,
+    ActionResult,
+    ExecutionResult,
+    DecisionStep,
+    DecisionEngine,
+    create_test_scenario,
+)
 
 __all__ = [
     # Geometry
@@ -93,4 +106,11 @@ __all__ = [
     "HIGH_BLOCK",
     # Visualization
     "DecisionEngineVisualizer",
+    # Action Execution & Decision Loop
+    "ActionExecutor",
+    "ActionResult",
+    "ExecutionResult",
+    "DecisionStep",
+    "DecisionEngine",
+    "create_test_scenario",
 ]

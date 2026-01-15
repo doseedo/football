@@ -16,13 +16,15 @@ Key insight: A defender who is goal-side but functionally irrelevant
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Dict, Tuple
-import numpy as np
+import math
 
 from .pitch_geometry import (
     Position,
     Velocity,
     PitchGeometry,
     HALF_LENGTH,
+    _dot,
+    _norm,
 )
 
 
@@ -67,23 +69,23 @@ class Player:
         If moving away, need to decelerate first.
         """
         # Vector to target
-        to_target = np.array([
+        to_target = [
             target.x - self.position.x,
             target.y - self.position.y
-        ])
-        distance = np.linalg.norm(to_target)
+        ]
+        distance = _norm(to_target)
 
         if distance < 0.1:
             return 0.0
 
         # Unit vector to target
-        to_target_unit = to_target / distance
+        to_target_unit = [to_target[0] / distance, to_target[1] / distance]
 
         # Current velocity vector
-        vel = self.velocity.to_array()
+        vel = self.velocity.to_list()
 
         # Component of velocity toward target
-        vel_toward = np.dot(vel, to_target_unit)
+        vel_toward = _dot(vel, to_target_unit)
 
         # If moving toward target
         if vel_toward > 0:
@@ -313,22 +315,22 @@ class EliminationCalculator:
         ball-to-goal line that the defender can reach.
         """
         # Line from ball to goal
-        line_vec = np.array([goal_pos.x - ball_pos.x, goal_pos.y - ball_pos.y])
-        line_len = np.linalg.norm(line_vec)
+        line_vec = [goal_pos.x - ball_pos.x, goal_pos.y - ball_pos.y]
+        line_len = _norm(line_vec)
 
         if line_len < 0.1:
             return ball_pos
 
-        line_unit = line_vec / line_len
+        line_unit = [line_vec[0] / line_len, line_vec[1] / line_len]
 
         # Vector from ball to defender
-        to_defender = np.array([
+        to_defender = [
             defender_pos.x - ball_pos.x,
             defender_pos.y - ball_pos.y
-        ])
+        ]
 
         # Project defender position onto line
-        projection = np.dot(to_defender, line_unit)
+        projection = _dot(to_defender, line_unit)
 
         # Clamp to line segment (between ball and goal)
         projection = max(0, min(line_len, projection))

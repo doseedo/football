@@ -18,7 +18,7 @@ This score allows:
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Tuple
 from enum import Enum
-import numpy as np
+import math
 
 from .pitch_geometry import (
     Position,
@@ -160,11 +160,15 @@ class GameStateEvaluator:
         self.optimal_shooting_distance = optimal_shooting_distance
         self.density_radius = density_radius
 
-    def evaluate(self, state: GameState) -> GameState:
+    def evaluate(self, state: GameState, depth: int = 0) -> GameState:
         """
         Fully evaluate a game state.
 
         Populates elimination state, score, and available actions.
+
+        Args:
+            state: The game state to evaluate
+            depth: Recursion depth (used to prevent infinite recursion)
         """
         # 1. Calculate eliminations
         state.elimination_state = self.elimination_calc.calculate(
@@ -179,7 +183,12 @@ class GameStateEvaluator:
         angle_score = self._score_angle(state)
         density_score = self._score_density(state)
         compactness_score = self._score_compactness(state)
-        action_score = self._score_actions(state)
+
+        # Only calculate action score at depth 0 to prevent recursion
+        if depth == 0:
+            action_score = self._score_actions(state, depth)
+        else:
+            action_score = 0.5  # Neutral score for hypothetical states
 
         state.score = StateScore(
             elimination_score=elimination_score,
@@ -190,8 +199,11 @@ class GameStateEvaluator:
             action_score=action_score,
         )
 
-        # 3. Find available actions
-        state.available_actions = self._find_actions(state)
+        # 3. Find available actions (only at depth 0)
+        if depth == 0:
+            state.available_actions = self._find_actions(state, depth)
+        else:
+            state.available_actions = []
 
         return state
 
@@ -310,15 +322,15 @@ class GameStateEvaluator:
         max_spread = 20.0
         score = (avg_dist - min_compact) / (max_spread - min_compact)
 
-        return np.clip(score, 0.0, 1.0)
+        return max(0.0, min(1.0, score))
 
-    def _score_actions(self, state: GameState) -> float:
+    def _score_actions(self, state: GameState, depth: int = 0) -> float:
         """
         Score based on available forward actions.
 
         More high-value options = higher score.
         """
-        actions = self._find_actions(state)
+        actions = self._find_actions(state, depth)
 
         if not actions:
             return 0.0
@@ -329,7 +341,7 @@ class GameStateEvaluator:
         # Normalize (assuming max EV of 0.5)
         return min(1.0, best_ev * 2)
 
-    def _find_actions(self, state: GameState) -> List[ActionOption]:
+    def _find_actions(self, state: GameState, depth: int = 0) -> List[ActionOption]:
         """
         Find all available actions and evaluate them.
         """
@@ -345,7 +357,7 @@ class GameStateEvaluator:
             if state.ball_carrier and attacker.id == state.ball_carrier.id:
                 continue  # Can't pass to yourself
 
-            pass_option = self._evaluate_pass(state, attacker)
+            pass_option = self._evaluate_pass(state, attacker, depth)
             if pass_option:
                 actions.append(pass_option)
 
@@ -405,6 +417,7 @@ class GameStateEvaluator:
         self,
         state: GameState,
         target_player: Player,
+        depth: int = 0,
     ) -> Optional[ActionOption]:
         """
         Evaluate passing to a teammate.
@@ -450,14 +463,14 @@ class GameStateEvaluator:
         success_prob = dist_factor * (1 - min(interception_risk, 0.8))
 
         # Value if successful
-        # Simulate state after pass
+        # Simulate state after pass (with increased depth to prevent recursion)
         hypothetical_state = GameState(
             ball_position=target,
             ball_carrier=target_player,
             attackers=state.attackers,
             defenders=state.defenders,
         )
-        hypothetical_evaluated = self.evaluate(hypothetical_state)
+        hypothetical_evaluated = self.evaluate(hypothetical_state, depth=depth + 1)
         value_if_success = hypothetical_evaluated.score.total * value_multiplier
 
         # Risk if intercepted
@@ -547,7 +560,8 @@ class GameStateEvaluator:
                 attackers=state.attackers,
                 defenders=state.defenders,
             )
-            evaluated = self.evaluate(hypo_state)
+            # Use depth=1 to avoid expensive action evaluation
+            evaluated = self.evaluate(hypo_state, depth=1)
             results.append((pos, evaluated.score.total))
 
         # Sort by score descending
@@ -557,16 +571,16 @@ class GameStateEvaluator:
         self,
         state: GameState,
         grid_resolution: float = 5.0,
-    ) -> np.ndarray:
+    ) -> List[List[float]]:
         """
         Generate a heatmap of position values across the pitch.
 
-        Returns 2D array of scores for each grid cell.
+        Returns 2D list of scores for each grid cell.
         """
         x_points = int(self.geometry.length / grid_resolution)
         y_points = int(self.geometry.width / grid_resolution)
 
-        heatmap = np.zeros((y_points, x_points))
+        heatmap = [[0.0] * x_points for _ in range(y_points)]
 
         for i in range(x_points):
             for j in range(y_points):
@@ -574,14 +588,14 @@ class GameStateEvaluator:
                 x = -HALF_LENGTH + (i + 0.5) * grid_resolution
                 y = -HALF_WIDTH + (j + 0.5) * grid_resolution
 
-                # Evaluate this position
+                # Evaluate this position (use depth=1 to avoid expensive action evaluation)
                 hypo_state = GameState(
                     ball_position=Position(x, y),
                     ball_carrier=state.ball_carrier,
                     attackers=state.attackers,
                     defenders=state.defenders,
                 )
-                evaluated = self.evaluate(hypo_state)
-                heatmap[j, i] = evaluated.score.total
+                evaluated = self.evaluate(hypo_state, depth=1)
+                heatmap[j][i] = evaluated.score.total
 
         return heatmap

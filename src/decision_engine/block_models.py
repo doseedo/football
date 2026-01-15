@@ -16,7 +16,7 @@ Each block has characteristic:
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Tuple
 from enum import Enum
-import numpy as np
+import math
 
 from .pitch_geometry import (
     Position,
@@ -327,7 +327,7 @@ class DefensiveBlock:
             for i in range(count):
                 y = start_y + i * step
                 # Clamp to pitch
-                y = np.clip(y, -HALF_WIDTH + 2, HALF_WIDTH - 2)
+                y = max(-HALF_WIDTH + 2, min(HALF_WIDTH - 2, y))
                 positions.append(Position(line_height, y))
 
         return positions

@@ -6,11 +6,13 @@ Standard pitch dimensions (UEFA/FIFA):
 - Width: 68m
 - Origin: (0, 0) at center of pitch
 - Attacking direction: +x (toward goal at x=52.5)
+
+NOTE: This module uses pure Python math (no numpy) for portability.
 """
 
 from dataclasses import dataclass
-from typing import Tuple
-import numpy as np
+from typing import Tuple, List
+import math
 
 # Standard pitch dimensions in meters
 PITCH_LENGTH = 105.0
@@ -42,20 +44,20 @@ class Position:
     x: float
     y: float
 
-    def to_array(self) -> np.ndarray:
-        return np.array([self.x, self.y])
+    def to_list(self) -> List[float]:
+        return [self.x, self.y]
 
     @classmethod
-    def from_array(cls, arr: np.ndarray) -> "Position":
+    def from_list(cls, arr: List[float]) -> "Position":
         return cls(x=float(arr[0]), y=float(arr[1]))
 
     def distance_to(self, other: "Position") -> float:
         """Euclidean distance to another position."""
-        return np.sqrt((self.x - other.x)**2 + (self.y - other.y)**2)
+        return math.sqrt((self.x - other.x)**2 + (self.y - other.y)**2)
 
     def angle_to(self, other: "Position") -> float:
         """Angle in radians from this position to another."""
-        return np.arctan2(other.y - self.y, other.x - self.x)
+        return math.atan2(other.y - self.y, other.x - self.x)
 
     def __add__(self, other: "Position") -> "Position":
         return Position(self.x + other.x, self.y + other.y)
@@ -73,23 +75,38 @@ class Velocity:
     @property
     def speed(self) -> float:
         """Magnitude of velocity."""
-        return np.sqrt(self.vx**2 + self.vy**2)
+        return math.sqrt(self.vx**2 + self.vy**2)
 
     @property
     def direction(self) -> float:
         """Direction in radians."""
-        return np.arctan2(self.vy, self.vx)
+        return math.atan2(self.vy, self.vx)
 
-    def to_array(self) -> np.ndarray:
-        return np.array([self.vx, self.vy])
+    def to_list(self) -> List[float]:
+        return [self.vx, self.vy]
 
     @classmethod
-    def from_array(cls, arr: np.ndarray) -> "Velocity":
+    def from_list(cls, arr: List[float]) -> "Velocity":
         return cls(vx=float(arr[0]), vy=float(arr[1]))
 
     @classmethod
     def zero(cls) -> "Velocity":
         return cls(vx=0.0, vy=0.0)
+
+
+def _dot(v1: List[float], v2: List[float]) -> float:
+    """Dot product of two vectors."""
+    return v1[0] * v2[0] + v1[1] * v2[1]
+
+
+def _norm(v: List[float]) -> float:
+    """Magnitude of a vector."""
+    return math.sqrt(v[0]**2 + v[1]**2)
+
+
+def _clip(value: float, min_val: float, max_val: float) -> float:
+    """Clip value to range."""
+    return max(min_val, min(max_val, value))
 
 
 class PitchGeometry:
@@ -252,26 +269,26 @@ class PitchGeometry:
         Used to determine how far a defender is from the ball-to-goal line.
         """
         # Line vector
-        line_vec = np.array([
+        line_vec = [
             line_end.x - line_start.x,
             line_end.y - line_start.y
-        ])
-        line_len = np.linalg.norm(line_vec)
+        ]
+        line_len = _norm(line_vec)
 
         if line_len == 0:
             return point.distance_to(line_start)
 
         # Normalize line vector
-        line_unit = line_vec / line_len
+        line_unit = [line_vec[0] / line_len, line_vec[1] / line_len]
 
         # Vector from line start to point
-        point_vec = np.array([
+        point_vec = [
             point.x - line_start.x,
             point.y - line_start.y
-        ])
+        ]
 
         # Project point onto line
-        projection_length = np.dot(point_vec, line_unit)
+        projection_length = _dot(point_vec, line_unit)
 
         # Clamp to line segment
         projection_length = max(0, min(line_len, projection_length))

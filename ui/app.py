@@ -116,16 +116,22 @@ def analyze():
         timestamp=0.0
     )
 
+    # Helper to convert numpy types to Python native
+    def to_native(val):
+        if hasattr(val, 'item'):
+            return val.item()
+        return val
+
     # Format response
     gaps = []
     for gap in result.defensive_gaps:
         gaps.append({
-            'x': gap.location[0],
-            'y': gap.location[1],
-            'size': gap.size,
-            'time_to_close': gap.time_to_close,
-            'exploitable': gap.exploitable,
-            'xg': gap.xg_if_exploited,
+            'x': to_native(gap.location[0]),
+            'y': to_native(gap.location[1]),
+            'size': to_native(gap.size),
+            'time_to_close': to_native(gap.time_to_close),
+            'exploitable': bool(gap.exploitable),
+            'xg': to_native(gap.xg_if_exploited),
         })
 
     options = []
@@ -133,14 +139,14 @@ def analyze():
         options.append({
             'action': opt.action_type,
             'target_player': opt.target_player_id,
-            'target_x': opt.target_position[0],
-            'target_y': opt.target_position[1],
-            'success_prob': opt.success_probability,
-            'intercept_prob': opt.interception_probability,
-            'xg_current': opt.xg_current,
-            'xg_target': opt.xg_target,
-            'xg_gain': opt.xg_gain,
-            'ev': opt.expected_value,
+            'target_x': to_native(opt.target_position[0]),
+            'target_y': to_native(opt.target_position[1]),
+            'success_prob': to_native(opt.success_probability),
+            'intercept_prob': to_native(opt.interception_probability),
+            'xg_current': to_native(opt.xg_current),
+            'xg_target': to_native(opt.xg_target),
+            'xg_gain': to_native(opt.xg_gain),
+            'ev': to_native(opt.expected_value),
             'recommendation': opt.recommendation,
         })
 
@@ -149,10 +155,10 @@ def analyze():
         best = {
             'action': result.best_option.action_type,
             'target_player': result.best_option.target_player_id,
-            'target_x': result.best_option.target_position[0],
-            'target_y': result.best_option.target_position[1],
-            'success_prob': result.best_option.success_probability,
-            'ev': result.best_option.expected_value,
+            'target_x': to_native(result.best_option.target_position[0]),
+            'target_y': to_native(result.best_option.target_position[1]),
+            'success_prob': to_native(result.best_option.success_probability),
+            'ev': to_native(result.best_option.expected_value),
             'recommendation': result.best_option.recommendation,
         }
 
@@ -160,9 +166,9 @@ def analyze():
         'gaps': gaps,
         'options': options,
         'best_option': best,
-        'total_options': result.total_options,
-        'high_value_options': result.high_value_options,
-        'safe_options': result.safe_options,
+        'total_options': int(result.total_options),
+        'high_value_options': int(result.high_value_options),
+        'safe_options': int(result.safe_options),
     })
 
 

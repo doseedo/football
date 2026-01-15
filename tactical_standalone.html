@@ -612,12 +612,83 @@ function evaluateDribble(state) {
 const LOOKAHEAD_DEPTH = 2; // How many steps ahead to look
 const FUTURE_DISCOUNT = 0.85; // Discount factor for future value
 
-// Simulate state after successful pass (without random movement)
+// Simulate state after successful pass - PASSER MAKES A RUN
 function simulatePassSuccess(state, passAction) {
     const newState = JSON.parse(JSON.stringify(state));
     newState.ball = { x: passAction.target.x, y: passAction.target.y };
+
+    // Find the passer and make them run forward (one-two potential)
+    const passerIdx = newState.attackers.findIndex(a => a.id === state.carrierId);
+    if (passerIdx >= 0) {
+        const passer = newState.attackers[passerIdx];
+        const receiver = passAction.target;
+
+        // Passer runs forward into space after passing
+        // Direction: toward goal, but also toward where ball went
+        const runDistance = 8; // meters
+        let runX = passer.x + runDistance * 0.8; // Mostly forward
+        let runY = passer.y;
+
+        // If pass was wide, run more central (overlap/underlap)
+        if (Math.abs(receiver.y) > Math.abs(passer.y)) {
+            // Pass went wider - passer cuts inside
+            runY = passer.y * 0.5;
+        } else {
+            // Pass went central - passer overlaps wide
+            runY = passer.y + (passer.y > 0 ? 5 : -5);
+        }
+
+        // Don't run past the goal line
+        runX = Math.min(runX, HALF_LENGTH - 8);
+        runY = Math.max(-HALF_WIDTH + 5, Math.min(HALF_WIDTH - 5, runY));
+
+        // Check if run destination has space (don't run into defenders)
+        let runBlocked = false;
+        for (const def of newState.defenders) {
+            if (dist({ x: runX, y: runY }, def) < 3) {
+                runBlocked = true;
+                break;
+            }
+        }
+
+        // Only make the run if there's space
+        if (!runBlocked) {
+            newState.attackers[passerIdx].x = runX;
+            newState.attackers[passerIdx].y = runY;
+        }
+    }
+
     newState.carrierId = passAction.targetPlayer;
     return newState;
+}
+
+// Check if a one-two is possible (pass and get it back)
+function evaluateOneTwoPotential(state, passAction) {
+    // Simulate the pass
+    const afterPass = simulatePassSuccess(state, passAction);
+
+    // Check if receiver can pass back to the (now moved) original passer
+    const originalPasser = afterPass.attackers.find(a => a.id === state.carrierId);
+    if (!originalPasser) return null;
+
+    // Evaluate a return pass
+    const returnPass = evaluatePass(afterPass, originalPasser);
+    if (!returnPass || returnPass.successProb < 0.5) return null;
+
+    // Check what the original passer could do after getting the ball back
+    const afterReturn = simulatePassSuccess(afterPass, returnPass);
+    const finalShot = evaluateShot(afterReturn);
+
+    if (finalShot && parseFloat(finalShot.xG) > 15) {
+        return {
+            isOneTwo: true,
+            returnPassProb: returnPass.successProb,
+            finalXG: finalShot.xG,
+            passerNewPos: { x: originalPasser.x, y: originalPasser.y }
+        };
+    }
+
+    return null;
 }
 
 // Simulate state after successful dribble
@@ -768,6 +839,27 @@ function findActions(state) {
                 if (futureActions[0].type === 'shot') {
                     passAction.createsShot = true;
                     passAction.shotXG = futureActions[0].xG;
+                }
+
+                // Check for ONE-TWO potential (give and go)
+                // Look for return pass to the original passer who has now made a run
+                const originalPasserId = state.carrierId;
+                const movedPasser = futureState.attackers.find(a => a.id === originalPasserId);
+                if (movedPasser) {
+                    const returnPass = futureActions.find(a =>
+                        a.type === 'pass' && a.targetPlayer === originalPasserId
+                    );
+                    if (returnPass && returnPass.successProb > 0.5) {
+                        passAction.isOneTwo = true;
+                        passAction.oneTwoReturnProb = (returnPass.successProb * 100).toFixed(0);
+
+                        // Check what happens after the one-two
+                        const afterOneTwo = simulatePassSuccess(futureState, returnPass);
+                        const oneTwoShot = evaluateShot(afterOneTwo);
+                        if (oneTwoShot && parseFloat(oneTwoShot.xG) > 10) {
+                            passAction.oneTwoXG = oneTwoShot.xG;
+                        }
+                    }
                 }
             }
 
@@ -1394,6 +1486,13 @@ function updateActionList(frame) {
     list.innerHTML = frame.actions.map((a, i) => {
         let tags = '';
         if (a.type === 'pass') {
+            // ONE-TWO indicator (give and go)
+            if (a.isOneTwo) {
+                const oneTwoLabel = a.oneTwoXG
+                    ? `1-2 → ${a.oneTwoXG}% xG`
+                    : `1-2 (${a.oneTwoReturnProb}%)`;
+                tags += `<span style="background:#00bcd4;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;font-weight:bold;">${oneTwoLabel}</span>`;
+            }
             // CUTBACK indicator
             if (a.isCutback) {
                 tags += '<span style="background:#e91e63;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;font-weight:bold;">CUTBACK</span>';
@@ -1405,7 +1504,7 @@ function updateActionList(frame) {
             // LOOKAHEAD: Show if pass creates a shot opportunity
             if (a.createsShot) {
                 tags += `<span style="background:#9b59b6;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">→SHOT ${a.shotXG}%</span>`;
-            } else if (a.nextBestAction) {
+            } else if (a.nextBestAction && !a.isOneTwo) {
                 tags += `<span style="background:#555;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">→${a.nextBestAction}</span>`;
             }
             if (a.isFreeMan) tags += '<span style="background:#27ae60;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-right:3px;">FREE</span>';

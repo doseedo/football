@@ -404,7 +404,7 @@ class DefensiveForceModel:
 
         Uses iterative relaxation to find stable position.
         """
-        current = defender.position.to_array()
+        current = defender.position.to_array().astype(float)
 
         for _ in range(iterations):
             # Sum all force vectors

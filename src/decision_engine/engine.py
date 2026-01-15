@@ -15,9 +15,9 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 
-# Pitch dimensions (meters)
-PITCH_LENGTH = 105.0
-PITCH_WIDTH = 68.0
+# Pitch dimensions (yards - standard soccer pitch)
+PITCH_LENGTH = 120.0  # yards
+PITCH_WIDTH = 75.0    # yards
 
 
 @dataclass
@@ -326,59 +326,90 @@ class XGZoneModel:
     """
     Maps pitch locations to expected goal (xG) values.
 
+    120 x 75 yard grid - one xG value per square yard.
     Based on historical shot data - what's the probability of
     scoring from each location?
     """
 
     def __init__(self):
-        # Initialize xG grid (12 x 8 zones)
+        # Initialize xG grid (120 x 75 zones - one per square yard)
+        self.grid_x = 120  # yards
+        self.grid_y = 75   # yards
         self.grid = self._create_xg_grid()
-        self.grid_x = 12
-        self.grid_y = 8
 
     def _create_xg_grid(self) -> np.ndarray:
         """
         Create xG grid based on standard shot probability model.
 
+        120 x 75 grid = 9000 zones (one per square yard)
         Values represent probability of scoring if a shot is taken from that zone.
         """
-        xg = np.zeros((8, 12))
+        xg = np.zeros((self.grid_y, self.grid_x))
 
-        # Distance from goal is primary factor
-        for i in range(12):
-            for j in range(8):
-                # Convert to pitch coordinates
-                x = (i / 12) * PITCH_LENGTH - PITCH_LENGTH / 2  # -52.5 to 52.5
-                y = (j / 8) * PITCH_WIDTH - PITCH_WIDTH / 2  # -34 to 34
+        # Goal position (center of goal at x=60, y=37.5)
+        goal_x = PITCH_LENGTH / 2  # 60 yards
+        goal_y = PITCH_WIDTH / 2   # 37.5 yards (center)
+        goal_width = 8  # yards (standard goal width)
 
-                # Distance to goal center (goal at x=52.5, y=0)
-                goal_x = PITCH_LENGTH / 2
-                goal_y = 0
+        for i in range(self.grid_x):
+            for j in range(self.grid_y):
+                # Position in yards (0,0 = corner, 60,37.5 = center)
+                x = i + 0.5  # center of yard square
+                y = j + 0.5
+
+                # Distance to goal center
                 distance = np.sqrt((goal_x - x)**2 + (goal_y - y)**2)
 
-                # Angle to goal
-                angle = np.abs(np.arctan2(y, goal_x - x))
+                # Calculate angle subtended by goal posts
+                left_post_y = goal_y - goal_width / 2
+                right_post_y = goal_y + goal_width / 2
 
-                # Base xG from distance (exponential decay)
-                base_xg = np.exp(-distance / 20) * 0.5
+                # Angles to each post from shot position
+                angle_left = np.arctan2(left_post_y - y, goal_x - x)
+                angle_right = np.arctan2(right_post_y - y, goal_x - x)
+                goal_angle = abs(angle_right - angle_left)
 
-                # Angle penalty (harder from tight angles)
-                angle_factor = np.cos(angle) ** 0.5
+                # Only calculate xG for attacking half (x > 60)
+                if x <= 60:
+                    # Own half - very low xG
+                    xg[j, i] = 0.001
+                    continue
 
-                # Central bonus
-                central_factor = 1 - (np.abs(y) / (PITCH_WIDTH / 2)) * 0.3
+                # Base xG from distance (based on historical data)
+                # Values calibrated to real-world xG data
+                dist_from_goal = goal_x - x  # How far from goal line
+
+                if dist_from_goal <= 6:  # 6-yard box
+                    base_xg = 0.40  # Very high conversion rate
+                elif dist_from_goal <= 18:  # Penalty box
+                    # Linear decay from 0.35 at 6 yards to 0.12 at 18 yards
+                    base_xg = 0.35 - (dist_from_goal - 6) * 0.019
+                elif dist_from_goal <= 25:  # Edge of box
+                    base_xg = 0.08
+                elif dist_from_goal <= 35:  # Long range
+                    base_xg = 0.04
+                else:
+                    base_xg = 0.02  # Very long range
+
+                # Angle factor - harder from tight angles
+                # Normalize goal_angle: max is ~0.5 rad from center, ~0.1 from wide
+                angle_factor = min(1.0, goal_angle / 0.4)
+
+                # Central bonus - shots from center have better angle
+                dist_from_center = abs(y - goal_y)
+                if dist_from_center < 8:  # Central area
+                    central_factor = 1.0
+                elif dist_from_center < 15:
+                    central_factor = 0.85
+                elif dist_from_center < 25:
+                    central_factor = 0.6
+                else:
+                    central_factor = 0.3  # Wide positions
 
                 xg[j, i] = base_xg * angle_factor * central_factor
 
-        # Boost for inside the box (last 16.5m, central area)
-        # Box is roughly last 2 columns, central 4 rows
-        xg[2:6, 10:] *= 1.8
-
-        # Six-yard box boost
-        xg[3:5, 11:] *= 1.5
-
         # Clip to reasonable range
-        xg = np.clip(xg, 0.01, 0.45)
+        xg = np.clip(xg, 0.001, 0.50)
 
         return xg
 
@@ -387,16 +418,23 @@ class XGZoneModel:
         Get xG value for a pitch position.
 
         Args:
-            position: (x, y) in meters, where (0, 0) is pitch center
+            position: (x, y) in yards, where (0, 0) is bottom-left corner
+                      OR coordinates centered on pitch (will be converted)
 
         Returns:
             xG value (probability of goal if shot taken from here)
         """
         x, y = position
 
+        # Convert from centered coordinates to corner-based
+        # If x is negative, assume centered coordinates
+        if x < 0:
+            x = x + PITCH_LENGTH / 2
+            y = y + PITCH_WIDTH / 2
+
         # Convert to grid indices
-        grid_x = int((x + PITCH_LENGTH / 2) / PITCH_LENGTH * self.grid_x)
-        grid_y = int((y + PITCH_WIDTH / 2) / PITCH_WIDTH * self.grid_y)
+        grid_x = int(x)
+        grid_y = int(y)
 
         # Clip to bounds
         grid_x = np.clip(grid_x, 0, self.grid_x - 1)
@@ -628,10 +666,10 @@ class ShotModel:
     - Goalkeeper position and reach
     """
 
-    # Goal dimensions (meters)
-    GOAL_WIDTH = 7.32
-    GOAL_HEIGHT = 2.44
-    GOAL_X = PITCH_LENGTH / 2  # 52.5m from center
+    # Goal dimensions (yards)
+    GOAL_WIDTH = 8.0   # yards (standard goal)
+    GOAL_HEIGHT = 2.67  # yards (8 feet)
+    GOAL_X = PITCH_LENGTH / 2  # 60 yards from center line
 
     def __init__(self):
         self.coverage_model = CoverageZoneModel()
@@ -644,84 +682,109 @@ class ShotModel:
         Calculate shot success probability.
 
         Args:
-            shooter_pos: Shooter position (x, y)
+            shooter_pos: Shooter position (x, y) - can be centered or corner-based
             defenders: List of defending outfield players
             goalkeeper: Goalkeeper state (if any)
 
         Returns:
             Tuple of (final_xg, block_probability, save_probability)
         """
+        x, y = shooter_pos
+
+        # Convert from centered coordinates if needed
+        if x < 0:
+            x = x + PITCH_LENGTH / 2
+            y = y + PITCH_WIDTH / 2
+
         # Step 1: Base xG from position
-        base_xg = self._position_xg(shooter_pos)
+        base_xg = self._position_xg((x, y))
 
         # Step 2: Calculate blocking probability from defenders
-        block_prob = self._defender_blocking(shooter_pos, defenders)
+        block_prob = self._defender_blocking((x, y), defenders)
 
-        # Step 3: Calculate save probability from goalkeeper
-        save_prob = self._goalkeeper_save(shooter_pos, goalkeeper)
+        # Step 3: Adjust for goalkeeper (but don't over-penalize)
+        # Goalkeeper effect is already somewhat captured in base xG
+        # Only significant adjustment if GK is out of position
+        gk_adjustment = self._goalkeeper_adjustment((x, y), goalkeeper)
 
-        # Final xG = base × (1 - block) × (1 - save)
-        final_xg = base_xg * (1 - block_prob) * (1 - save_prob)
+        # Final xG: base xG reduced by blocking, adjusted for GK
+        # Block directly reduces shot chance
+        # GK adjustment is multiplicative but capped
+        final_xg = base_xg * (1 - block_prob) * gk_adjustment
 
-        return final_xg, block_prob, save_prob
+        return float(np.clip(final_xg, 0.01, 0.50)), block_prob, 1 - gk_adjustment
 
     def _position_xg(self, pos: Tuple[float, float]) -> float:
         """
         Calculate base xG from shot position.
 
-        Based on distance and angle to goal.
+        Position is in yards, corner-based (0,0 = bottom-left corner).
+        Goal is at x=120, y=37.5.
         """
         x, y = pos
-        goal_center = (self.GOAL_X, 0)
+        goal_x = PITCH_LENGTH  # 120 yards (goal line)
+        goal_y = PITCH_WIDTH / 2  # 37.5 yards (center)
 
-        # Distance to goal
-        distance = np.sqrt((goal_center[0] - x)**2 + (goal_center[1] - y)**2)
+        # Distance to goal center
+        distance = np.sqrt((goal_x - x)**2 + (goal_y - y)**2)
 
-        # Angle to goal (radians) - how much of goal is visible
+        # Distance from goal line
+        dist_from_goal = goal_x - x
+
         # Calculate angle subtended by goal posts
-        left_post = (self.GOAL_X, -self.GOAL_WIDTH / 2)
-        right_post = (self.GOAL_X, self.GOAL_WIDTH / 2)
+        left_post_y = goal_y - self.GOAL_WIDTH / 2
+        right_post_y = goal_y + self.GOAL_WIDTH / 2
 
-        angle_left = np.arctan2(left_post[1] - y, left_post[0] - x)
-        angle_right = np.arctan2(right_post[1] - y, right_post[0] - x)
+        angle_left = np.arctan2(left_post_y - y, goal_x - x)
+        angle_right = np.arctan2(right_post_y - y, goal_x - x)
         goal_angle = abs(angle_right - angle_left)
 
-        # Base xG model (simplified)
-        # Close + central = high xG, far + wide = low xG
-        if distance < 5:  # Very close
-            base = 0.6
-        elif distance < 11:  # Inside box
-            base = 0.4 * np.exp(-distance / 15)
-        elif distance < 16.5:  # Edge of box
-            base = 0.2 * np.exp(-distance / 20)
-        elif distance < 25:  # Outside box
-            base = 0.08 * np.exp(-distance / 30)
-        else:  # Long range
-            base = 0.03 * np.exp(-distance / 40)
+        # Base xG based on distance from goal (realistic values)
+        if dist_from_goal <= 6:  # 6-yard box
+            base = 0.40
+        elif dist_from_goal <= 12:  # Inside penalty area, close
+            base = 0.25
+        elif dist_from_goal <= 18:  # Penalty box edge
+            base = 0.15
+        elif dist_from_goal <= 25:  # Just outside box
+            base = 0.08
+        elif dist_from_goal <= 35:  # Long range
+            base = 0.04
+        else:  # Very long range
+            base = 0.02
 
         # Angle factor - wider angle = more goal to aim at
-        angle_factor = min(1.0, goal_angle / 0.5)  # 0.5 rad ~ 30 degrees
+        angle_factor = min(1.0, goal_angle / 0.35)
 
-        # Central bonus
-        central_factor = 1.0 - (abs(y) / (self.GOAL_WIDTH * 2)) * 0.4
+        # Central bonus - shots from center are easier
+        dist_from_center = abs(y - goal_y)
+        if dist_from_center < 6:
+            central_factor = 1.0
+        elif dist_from_center < 12:
+            central_factor = 0.85
+        elif dist_from_center < 20:
+            central_factor = 0.65
+        else:
+            central_factor = 0.40
 
-        return float(np.clip(base * angle_factor * central_factor, 0.01, 0.75))
+        return float(np.clip(base * angle_factor * central_factor, 0.01, 0.50))
 
     def _defender_blocking(self, shooter_pos: Tuple[float, float],
                            defenders: List[PlayerState]) -> float:
         """
         Calculate probability of shot being blocked by defenders.
 
-        Checks if any defender is in the shot corridor to goal.
+        Only considers defenders ACTUALLY in the shot corridor.
         """
         if not defenders:
             return 0.0
 
         x, y = shooter_pos
-        goal_center = (self.GOAL_X, 0)
+        goal_x = PITCH_LENGTH
+        goal_y = PITCH_WIDTH / 2
 
-        # Shot corridor - line from shooter to goal center, with some width
-        shot_vector = np.array([goal_center[0] - x, goal_center[1] - y])
+        # Shot corridor - line from shooter to goal center
+        shot_vector = np.array([goal_x - x, goal_y - y])
         shot_distance = np.linalg.norm(shot_vector)
 
         if shot_distance < 0.1:
@@ -735,86 +798,91 @@ class ShotModel:
             if defender.is_goalkeeper:
                 continue  # Goalkeeper handled separately
 
+            def_x, def_y = defender.position
+            # Convert defender position if centered
+            if def_x < 0:
+                def_x = def_x + PITCH_LENGTH / 2
+                def_y = def_y + PITCH_WIDTH / 2
+
             # Vector from shooter to defender
-            def_vector = np.array([defender.position[0] - x, defender.position[1] - y])
+            def_vector = np.array([def_x - x, def_y - y])
             def_distance = np.linalg.norm(def_vector)
 
             # Is defender between shooter and goal?
             if def_distance > shot_distance:
-                continue  # Defender is behind the goal
+                continue  # Defender is behind the goal line
 
             # Project defender onto shot line
             projection = np.dot(def_vector, shot_direction)
 
-            if projection < 0:
-                continue  # Defender is behind shooter
+            if projection < 2:
+                continue  # Defender is behind or very close to shooter
 
             # Perpendicular distance from shot line
             perp_distance = abs(np.cross(shot_direction, def_vector))
 
             # Block probability based on perpendicular distance
-            # Defender blocks if within ~1.5m of shot line
-            if perp_distance < 0.5:
-                block_prob = 0.7  # Directly in line
-            elif perp_distance < 1.0:
-                block_prob = 0.4
-            elif perp_distance < 1.5:
-                block_prob = 0.2
+            # Defender only blocks if VERY close to shot line (within 1 yard)
+            if perp_distance < 1.0:
+                block_prob = 0.50  # Directly in line
             elif perp_distance < 2.0:
-                block_prob = 0.1
+                block_prob = 0.25
+            elif perp_distance < 3.0:
+                block_prob = 0.10
             else:
-                block_prob = 0.0
+                block_prob = 0.0  # Not in the way
 
-            # Closer defenders block more effectively
-            distance_factor = max(0.3, 1.0 - projection / shot_distance)
+            # Closer to shooter = more likely to block
+            relative_pos = projection / shot_distance
+            if relative_pos < 0.3:  # Very close to shooter
+                distance_factor = 0.8
+            elif relative_pos < 0.6:
+                distance_factor = 0.5
+            else:
+                distance_factor = 0.3  # Close to goal, ball already past
+
             block_prob *= distance_factor
 
             # Combine probabilities (at least one blocks)
             total_block_prob = 1 - (1 - total_block_prob) * (1 - block_prob)
 
-        return float(np.clip(total_block_prob, 0, 0.9))
+        return float(np.clip(total_block_prob, 0, 0.70))
 
-    def _goalkeeper_save(self, shooter_pos: Tuple[float, float],
-                         goalkeeper: Optional[PlayerState]) -> float:
+    def _goalkeeper_adjustment(self, shooter_pos: Tuple[float, float],
+                               goalkeeper: Optional[PlayerState]) -> float:
         """
-        Calculate probability of goalkeeper saving the shot.
+        Calculate adjustment factor for goalkeeper.
+
+        Returns a multiplier (1.0 = no adjustment, <1.0 = GK helps defense, >1.0 = GK out of position)
         """
         if goalkeeper is None:
-            return 0.0
+            return 1.2  # No GK = easier to score
 
         x, y = shooter_pos
         gk_x, gk_y = goalkeeper.position
 
-        # Distance from shooter to goal
-        shot_distance = np.sqrt((self.GOAL_X - x)**2 + y**2)
+        # Convert if centered coordinates
+        if gk_x < 0:
+            gk_x = gk_x + PITCH_LENGTH / 2
+            gk_y = gk_y + PITCH_WIDTH / 2
 
-        # Where would the shot cross the goal line? (simplified: toward center)
-        # In reality we'd calculate shot trajectory
+        goal_y = PITCH_WIDTH / 2
 
-        # Goalkeeper coverage - how much of goal can they reach?
-        # Base reaction time + dive reach
-        gk_reach = 3.0  # meters they can cover with a dive
+        # How far is GK from goal center?
+        gk_off_center = abs(gk_y - goal_y)
 
-        # Distance from GK to likely shot target (goal center area)
-        gk_to_center = abs(gk_y)
-
-        # If GK is well-positioned (near center), higher save probability
-        positioning_factor = max(0, 1.0 - gk_to_center / (self.GOAL_WIDTH / 2))
-
-        # Closer shots are harder to save (less reaction time)
-        if shot_distance < 6:
-            distance_factor = 0.4  # Close range - hard to save
-        elif shot_distance < 11:
-            distance_factor = 0.55
-        elif shot_distance < 16.5:
-            distance_factor = 0.65
+        # Well-positioned GK = slight reduction in xG (already accounted in base xG)
+        # Out of position GK = bonus to shooter
+        if gk_off_center < 2:
+            return 0.95  # Well positioned
+        elif gk_off_center < 4:
+            return 1.0   # Neutral
+        elif gk_off_center < 6:
+            return 1.1   # Slightly out
         else:
-            distance_factor = 0.75  # Long range - GK has time
+            return 1.25  # Way out of position
 
-        # Base save probability
-        save_prob = distance_factor * (0.5 + 0.5 * positioning_factor)
-
-        return float(np.clip(save_prob, 0.1, 0.85))
+        return 1.0
 
 
 class DribbleModel:

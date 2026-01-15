@@ -337,7 +337,7 @@
             </div>
             <div id="pitch">
                 <canvas id="canvas"></canvas>
-                <div class="coords-display" id="coordsDisplay">x: 0.0m, y: 0.0m</div>
+                <div class="coords-display" id="coordsDisplay">x: 0 yds, y: 0 yds</div>
                 <div class="xg-display" id="xgDisplay">xG: 0.000</div>
             </div>
             <p class="instructions">Click to move ball | Drag players to reposition | Toggle layers on right panel</p>
@@ -425,9 +425,9 @@
     </div>
 
     <script>
-        // Pitch dimensions
-        const PITCH_LENGTH = 105;
-        const PITCH_WIDTH = 68;
+        // Pitch dimensions (yards)
+        const PITCH_LENGTH = 120;
+        const PITCH_WIDTH = 75;
         const PADDING = 10;
 
         // State
@@ -587,7 +587,7 @@
                             <span class="gap-badge ${badgeClass}">${badgeText}</span>
                         </div>
                         <div class="gap-details">
-                            Size: ${gap.size.toFixed(1)}m |
+                            Size: ${gap.size.toFixed(0)} yds |
                             Close: ${gap.time_to_close.toFixed(1)}s |
                             xG: ${gap.xg.toFixed(3)}
                         </div>
@@ -737,8 +737,8 @@
             ctx.font = '10px monospace';
             ctx.fillStyle = 'rgba(255,255,255,0.5)';
 
-            // Vertical lines every 10m
-            for (let x = -50; x <= 50; x += 10) {
+            // Vertical lines every 10 yards
+            for (let x = -60; x <= 60; x += 10) {
                 const pos = pitchToCanvas(x, 0);
                 const top = pitchToCanvas(x, PITCH_WIDTH/2);
                 const bottom = pitchToCanvas(x, -PITCH_WIDTH/2);
@@ -750,11 +750,11 @@
 
                 // Label
                 ctx.textAlign = 'center';
-                ctx.fillText(`${x}m`, pos.x, bottom.y + 12);
+                ctx.fillText(`${x}`, pos.x, bottom.y + 12);
             }
 
-            // Horizontal lines every 10m
-            for (let y = -30; y <= 30; y += 10) {
+            // Horizontal lines every 10 yards
+            for (let y = -35; y <= 35; y += 10) {
                 const pos = pitchToCanvas(0, y);
                 const left = pitchToCanvas(-PITCH_LENGTH/2, y);
                 const right = pitchToCanvas(PITCH_LENGTH/2, y);
@@ -766,7 +766,7 @@
 
                 // Label
                 ctx.textAlign = 'left';
-                ctx.fillText(`${y}m`, left.x - 25, pos.y + 3);
+                ctx.fillText(`${y}`, left.x - 20, pos.y + 3);
             }
         }
 
@@ -791,13 +791,13 @@
             ctx.lineTo(center.x, br.y);
             ctx.stroke();
 
-            // Center circle
+            // Center circle (10 yards radius)
             ctx.beginPath();
-            ctx.arc(center.x, center.y, 9.15 * scale, 0, Math.PI * 2);
+            ctx.arc(center.x, center.y, 10 * scale, 0, Math.PI * 2);
             ctx.stroke();
 
-            // Penalty areas
-            const boxWidth = 40.3, boxDepth = 16.5;
+            // Penalty areas (44 yards wide, 18 yards deep)
+            const boxWidth = 44, boxDepth = 18;
 
             // Left box
             const lb = pitchToCanvas(-PITCH_LENGTH/2 + boxDepth, boxWidth/2);
@@ -808,9 +808,21 @@
             const rb = pitchToCanvas(PITCH_LENGTH/2 - boxDepth, boxWidth/2);
             ctx.strokeRect(rb.x, rb.y, lbSize.w, lbSize.h);
 
-            // Goals
+            // 6-yard boxes (20 yards wide, 6 yards deep)
+            const smallBoxWidth = 20, smallBoxDepth = 6;
+            const sbSize = { w: smallBoxDepth * scale, h: smallBoxWidth * scale };
+
+            // Left 6-yard box
+            const lsb = pitchToCanvas(-PITCH_LENGTH/2 + smallBoxDepth, smallBoxWidth/2);
+            ctx.strokeRect(tl.x, lsb.y, sbSize.w, sbSize.h);
+
+            // Right 6-yard box
+            const rsb = pitchToCanvas(PITCH_LENGTH/2 - smallBoxDepth, smallBoxWidth/2);
+            ctx.strokeRect(rsb.x, rsb.y, sbSize.w, sbSize.h);
+
+            // Goals (8 yards wide)
             ctx.lineWidth = 3;
-            const goalWidth = 7.32;
+            const goalWidth = 8;
             const gl = pitchToCanvas(-PITCH_LENGTH/2, goalWidth/2);
             const gr = pitchToCanvas(PITCH_LENGTH/2, goalWidth/2);
             ctx.strokeStyle = '#fff';
@@ -1074,7 +1086,7 @@
             // Update coordinate display
             if (Math.abs(pitch.x) <= PITCH_LENGTH/2 + 5 && Math.abs(pitch.y) <= PITCH_WIDTH/2 + 5) {
                 document.getElementById('coordsDisplay').textContent =
-                    `x: ${pitch.x.toFixed(1)}m, y: ${pitch.y.toFixed(1)}m`;
+                    `x: ${pitch.x.toFixed(0)} yds, y: ${pitch.y.toFixed(0)} yds`;
 
                 // Update xG display
                 const xg = getXgAtPosition(pitch.x, pitch.y);

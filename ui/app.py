@@ -24,37 +24,42 @@ engine = DecisionEngine()
 
 
 def create_default_scenario():
-    """Create default game scenario."""
+    """Create default game scenario.
+
+    Pitch is 120 yards x 75 yards.
+    Coordinates are centered: x from -60 to 60, y from -37.5 to 37.5.
+    Team A attacks toward x=60 (right goal).
+    """
     import math
 
     # Team A (attacking left to right, facing_angle=0 means facing goal)
     team_a = [
-        PlayerState(player_id=1, team=0, position=(-45, 0), max_speed=6.0, is_goalkeeper=True, facing_angle=0),
-        PlayerState(player_id=2, team=0, position=(-30, -20), max_speed=7.5, facing_angle=0.2),
-        PlayerState(player_id=3, team=0, position=(-32, -5), max_speed=7.5, facing_angle=0),
-        PlayerState(player_id=4, team=0, position=(-32, 5), max_speed=7.5, facing_angle=0),
-        PlayerState(player_id=5, team=0, position=(-30, 20), max_speed=7.5, facing_angle=-0.2),
-        PlayerState(player_id=6, team=0, position=(-10, -15), max_speed=8.0, facing_angle=0.3),
-        PlayerState(player_id=7, team=0, position=(-5, 0), max_speed=8.0, facing_angle=0),
-        PlayerState(player_id=8, team=0, position=(-10, 15), max_speed=8.0, facing_angle=-0.3),
-        PlayerState(player_id=9, team=0, position=(20, -12), max_speed=8.5, facing_angle=0.4),
-        PlayerState(player_id=10, team=0, position=(25, 5), max_speed=8.5, facing_angle=0),
-        PlayerState(player_id=11, team=0, position=(18, 18), max_speed=8.5, facing_angle=-0.4),
+        PlayerState(player_id=1, team=0, position=(-50, 0), max_speed=6.0, is_goalkeeper=True, facing_angle=0),
+        PlayerState(player_id=2, team=0, position=(-35, -22), max_speed=7.5, facing_angle=0.2),
+        PlayerState(player_id=3, team=0, position=(-37, -6), max_speed=7.5, facing_angle=0),
+        PlayerState(player_id=4, team=0, position=(-37, 6), max_speed=7.5, facing_angle=0),
+        PlayerState(player_id=5, team=0, position=(-35, 22), max_speed=7.5, facing_angle=-0.2),
+        PlayerState(player_id=6, team=0, position=(-12, -18), max_speed=8.0, facing_angle=0.3),
+        PlayerState(player_id=7, team=0, position=(-6, 0), max_speed=8.0, facing_angle=0),
+        PlayerState(player_id=8, team=0, position=(-12, 18), max_speed=8.0, facing_angle=-0.3),
+        PlayerState(player_id=9, team=0, position=(22, -14), max_speed=8.5, facing_angle=0.4),
+        PlayerState(player_id=10, team=0, position=(28, 6), max_speed=8.5, facing_angle=0),
+        PlayerState(player_id=11, team=0, position=(20, 20), max_speed=8.5, facing_angle=-0.4),
     ]
 
     # Team B (defending, facing_angle=pi means facing own goal/attackers)
     team_b = [
-        PlayerState(player_id=1, team=1, position=(50, 0), max_speed=6.0, is_goalkeeper=True, facing_angle=math.pi),
-        PlayerState(player_id=2, team=1, position=(35, -22), max_speed=7.5, facing_angle=math.pi),
-        PlayerState(player_id=3, team=1, position=(38, -8), max_speed=7.5, facing_angle=math.pi),
-        PlayerState(player_id=4, team=1, position=(38, 3), max_speed=7.5, facing_angle=math.pi),
-        PlayerState(player_id=5, team=1, position=(35, 18), max_speed=7.5, facing_angle=math.pi),
-        PlayerState(player_id=6, team=1, position=(20, -10), max_speed=8.0, facing_angle=math.pi),
-        PlayerState(player_id=7, team=1, position=(15, 5), max_speed=8.0, facing_angle=math.pi),
-        PlayerState(player_id=8, team=1, position=(18, 15), max_speed=8.0, facing_angle=math.pi),
-        PlayerState(player_id=9, team=1, position=(-10, -5), max_speed=8.5, facing_angle=math.pi),
-        PlayerState(player_id=10, team=1, position=(-15, 10), max_speed=8.5, facing_angle=math.pi),
-        PlayerState(player_id=11, team=1, position=(-20, 0), max_speed=8.5, facing_angle=math.pi),
+        PlayerState(player_id=1, team=1, position=(55, 0), max_speed=6.0, is_goalkeeper=True, facing_angle=math.pi),
+        PlayerState(player_id=2, team=1, position=(40, -25), max_speed=7.5, facing_angle=math.pi),
+        PlayerState(player_id=3, team=1, position=(43, -10), max_speed=7.5, facing_angle=math.pi),
+        PlayerState(player_id=4, team=1, position=(43, 4), max_speed=7.5, facing_angle=math.pi),
+        PlayerState(player_id=5, team=1, position=(40, 20), max_speed=7.5, facing_angle=math.pi),
+        PlayerState(player_id=6, team=1, position=(22, -12), max_speed=8.0, facing_angle=math.pi),
+        PlayerState(player_id=7, team=1, position=(17, 6), max_speed=8.0, facing_angle=math.pi),
+        PlayerState(player_id=8, team=1, position=(20, 17), max_speed=8.0, facing_angle=math.pi),
+        PlayerState(player_id=9, team=1, position=(-12, -6), max_speed=8.5, facing_angle=math.pi),
+        PlayerState(player_id=10, team=1, position=(-18, 12), max_speed=8.5, facing_angle=math.pi),
+        PlayerState(player_id=11, team=1, position=(-23, 0), max_speed=8.5, facing_angle=math.pi),
     ]
 
     return team_a, team_b
@@ -64,7 +69,7 @@ def create_default_scenario():
 current_state = {
     'team_a': [],
     'team_b': [],
-    'ball_position': (-5, 0),
+    'ball_position': (-6, 0),  # Near center, slightly on Team A's side
     'ball_carrier_id': 7,
 }
 
@@ -216,34 +221,47 @@ def move_ball():
 def reset():
     """Reset to default scenario."""
     current_state['team_a'], current_state['team_b'] = create_default_scenario()
-    current_state['ball_position'] = (-5, 0)
+    current_state['ball_position'] = (-6, 0)  # Near center
     current_state['ball_carrier_id'] = 7
     return jsonify({'success': True})
 
 
 @app.route('/api/xg_zones')
 def get_xg_zones():
-    """Get xG zone data for visualization."""
-    # Grid of xG values across the pitch
-    # Pitch: x from -52.5 to 52.5, y from -34 to 34
-    zones = []
-    step = 5  # 5 meter grid
+    """Get xG zone data for visualization.
 
-    for x in range(-50, 55, step):
-        for y in range(-30, 35, step):
+    Returns the full 120x75 yard grid (9000 zones).
+    Each zone is 1 yard x 1 yard.
+    Coordinates are centered: x from -60 to 60, y from -37.5 to 37.5.
+    """
+    # Return the raw grid data - let frontend handle rendering
+    # Grid is stored as corner-based (0-120, 0-75)
+    # Convert to centered for API response
+
+    # For performance, send every yard in attacking half,
+    # but group defensive half into larger zones
+    zones = []
+
+    # Full resolution for attacking half (x > 0 in centered coords, or x > 60 in corner)
+    # This is where xG matters most
+    for x in range(-60, 61):  # -60 to 60 yards
+        for y in range(-37, 38):  # -37 to 37 yards
+            # Only send zones where xG > 0.01 (attacking half)
             xg = engine.xg_model.get_xg((x, y))
-            zones.append({
-                'x': x,
-                'y': y,
-                'xg': float(xg),
-                'width': step,
-                'height': step,
-            })
+            if xg > 0.005:
+                zones.append({
+                    'x': x,
+                    'y': y,
+                    'xg': float(xg),
+                    'width': 1,
+                    'height': 1,
+                })
 
     return jsonify({
         'zones': zones,
-        'pitch_length': 105,
-        'pitch_width': 68,
+        'pitch_length': 120,
+        'pitch_width': 75,
+        'grid_resolution': 1,  # 1 yard per zone
     })
 
 

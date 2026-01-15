@@ -667,7 +667,7 @@ class ShotModel:
     # Goal dimensions (yards)
     GOAL_WIDTH = 8.0   # yards (standard goal)
     GOAL_HEIGHT = 2.67  # yards (8 feet)
-    GOAL_X = PITCH_LENGTH / 2  # 60 yards from center line
+    GOAL_X = PITCH_LENGTH  # 120 yards (goal line)
 
     def __init__(self):
         self.coverage_model = CoverageZoneModel()

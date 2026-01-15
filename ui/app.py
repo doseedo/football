@@ -232,36 +232,35 @@ def get_xg_zones():
 
     Returns the full 120x75 yard grid (9000 zones).
     Each zone is 1 yard x 1 yard.
-    Coordinates are centered: x from -60 to 60, y from -37.5 to 37.5.
+    Coordinates are centered: x from -60 to 59, y from -37 to 37.
     """
-    # Return the raw grid data - let frontend handle rendering
-    # Grid is stored as corner-based (0-120, 0-75)
+    # Return ALL 9000 zones (120 x 75 grid)
+    # Grid is stored as corner-based (0-119, 0-74)
     # Convert to centered for API response
-
-    # For performance, send every yard in attacking half,
-    # but group defensive half into larger zones
     zones = []
 
-    # Full resolution for attacking half (x > 0 in centered coords, or x > 60 in corner)
-    # This is where xG matters most
-    for x in range(-60, 61):  # -60 to 60 yards
-        for y in range(-37, 38):  # -37 to 37 yards
-            # Only send zones where xG > 0.01 (attacking half)
-            xg = engine.xg_model.get_xg((x, y))
-            if xg > 0.005:
-                zones.append({
-                    'x': x,
-                    'y': y,
-                    'xg': float(xg),
-                    'width': 1,
-                    'height': 1,
-                })
+    # Full 120x75 grid - one zone per square yard
+    for x in range(120):  # 0 to 119 (corner-based)
+        for y in range(75):  # 0 to 74 (corner-based)
+            # Convert to centered coordinates
+            centered_x = x - 60  # -60 to 59
+            centered_y = y - 37  # -37 to 37 (close enough to -37.5 to 37.5)
+
+            xg = engine.xg_model.get_xg((centered_x, centered_y))
+            zones.append({
+                'x': centered_x,
+                'y': centered_y,
+                'xg': float(xg),
+                'width': 1,
+                'height': 1,
+            })
 
     return jsonify({
         'zones': zones,
         'pitch_length': 120,
         'pitch_width': 75,
         'grid_resolution': 1,  # 1 yard per zone
+        'total_zones': len(zones),  # Should be 9000
     })
 
 

@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Football Decision Engine</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #4ecca3;
+            margin-bottom: 10px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .pitch-container {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        #pitch {
+            background: #2d5a27;
+            border: 3px solid #fff;
+            border-radius: 5px;
+        }
+        .info-panel {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
+            min-width: 300px;
+        }
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            background: #4ecca3;
+            color: #1a1a2e;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #3db892;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .step-info {
+            margin: 10px 0;
+            padding: 10px;
+            background: #0f3460;
+            border-radius: 5px;
+        }
+        .action {
+            color: #4ecca3;
+            font-weight: bold;
+        }
+        .result-success {
+            color: #4ecca3;
+        }
+        .result-fail {
+            color: #e94560;
+        }
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="range"] {
+            width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Football Decision Engine</h1>
+
+    <div class="controls">
+        <button id="playBtn" onclick="togglePlay()">▶ Play</button>
+        <button onclick="stepBack()" id="backBtn">◀ Back</button>
+        <button onclick="stepForward()" id="fwdBtn">Next ▶</button>
+        <button onclick="reset()">↺ Reset</button>
+        <div class="speed-control">
+            <span>Speed:</span>
+            <input type="range" id="speed" min="200" max="2000" value="1000" onchange="updateSpeed()">
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="pitch-container">
+            <canvas id="pitch" width="700" height="450"></canvas>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-dot" style="background: #3498db;"></div>
+                    <span>Attackers</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot" style="background: #e74c3c;"></div>
+                    <span>Defenders</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot" style="background: #f1c40f;"></div>
+                    <span>Ball</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <h3>Step <span id="stepNum">1</span> / 9</h3>
+            <div class="step-info">
+                <div><strong>Ball Carrier:</strong> <span id="carrier">-</span></div>
+                <div><strong>Ball Position:</strong> <span id="ballPos">-</span></div>
+            </div>
+            <div class="step-info">
+                <div><strong>Action:</strong> <span id="actionType" class="action">-</span></div>
+                <div><strong>Target:</strong> <span id="actionTarget">-</span></div>
+                <div><strong>Success Prob:</strong> <span id="successProb">-</span></div>
+                <div><strong>Expected Value:</strong> <span id="expValue">-</span></div>
+            </div>
+            <div class="step-info">
+                <div><strong>Result:</strong> <span id="result">-</span></div>
+                <div id="message"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const frames = [{"step": 1, "ball": {"x": -35, "y": -15}, "carrier": "CB1", "attackers": [{"id": "GK", "x": -45, "y": 0}, {"id": "CB1", "x": -35, "y": -15}, {"id": "CB2", "x": -35, "y": 15}, {"id": "LB", "x": -30, "y": -30}, {"id": "RB", "x": -30, "y": 30}, {"id": "CM1", "x": -15, "y": -10}, {"id": "CM2", "x": -15, "y": 10}, {"id": "LW", "x": 5, "y": -25}, {"id": "RW", "x": 5, "y": 25}, {"id": "ST1", "x": 15, "y": -5}, {"id": "ST2", "x": 15, "y": 5}], "defenders": [{"id": "D_GK", "x": 45, "y": 0}, {"id": "D_CB1", "x": 30, "y": -10}, {"id": "D_CB2", "x": 30, "y": 10}, {"id": "D_LB", "x": 25, "y": -25}, {"id": "D_RB", "x": 25, "y": 25}, {"id": "D_CM1", "x": 10, "y": -15}, {"id": "D_CM2", "x": 10, "y": 0}, {"id": "D_CM3", "x": 10, "y": 15}, {"id": "D_LW", "x": -5, "y": -20}, {"id": "D_RW", "x": -5, "y": 20}, {"id": "D_ST", "x": -15, "y": 0}], "action": {"type": "dribble", "target": {"x": -30, "y": -15}, "success_prob": 0.8, "expected_value": 0.14}, "result": "success", "message": "Dribble successful"}, {"step": 2, "ball": {"x": -30, "y": -15}, "carrier": "CB1", "attackers": [{"id": "GK", "x": -45, "y": 0}, {"id": "CB1", "x": -30, "y": -15}, {"id": "CB2", "x": -35, "y": 15}, {"id": "LB", "x": -30, "y": -30}, {"id": "RB", "x": -30, "y": 30}, {"id": "CM1", "x": -15, "y": -10}, {"id": "CM2", "x": -15, "y": 10}, {"id": "LW", "x": 5, "y": -25}, {"id": "RW", "x": 5, "y": 25}, {"id": "ST1", "x": 15, "y": -5}, {"id": "ST2", "x": 15, "y": 5}], "defenders": [{"id": "D_GK", "x": 43.03883864861816, "y": -0.3922322702763681}, {"id": "D_CB1", "x": 28.00690848351024, "y": -10.16609095970748}, {"id": "D_CB2", "x": 28.153846153846153, "y": 9.23076923076923}, {"id": "D_LB", "x": 23.032260179800186, "y": -24.642229123600032}, {"id": "D_RB", "x": 23.382527831393624, "y": 23.82365660464991}, {"id": "D_CM1", "x": 8.0, "y": -15.0}, {"id": "D_CM2", "x": 8.127341644861911, "y": -0.7022468831767834}, {"id": "D_CM3", "x": 8.4, "y": 13.8}, {"id": "D_LW", "x": -6.96116135138184, "y": -19.607767729723633}, {"id": "D_RW", "x": -6.1624763874381925, "y": 18.37253305758653}, {"id": "D_ST", "x": -16.414213562373096, "y": -1.414213562373095}], "action": {"type": "pass_forward", "target": {"x": -15, "y": -10}, "success_prob": 0.6047152924789526, "expected_value": 0.14223969108903325}, "result": "success", "message": "Pass to CM1 successful"}, {"step": 3, "ball": {"x": -15, "y": -10}, "carrier": "CM1", "attackers": [{"id": "GK", "x": -45, "y": 0}, {"id": "CB1", "x": -30, "y": -15}, {"id": "CB2", "x": -35, "y": 15}, {"id": "LB", "x": -30, "y": -30}, {"id": "RB", "x": -30, "y": 30}, {"id": "CM1", "x": -15, "y": -10}, {"id": "CM2", "x": -15, "y": 10}, {"id": "LW", "x": 5, "y": -25}, {"id": "RW", "x": 5, "y": 25}, {"id": "ST1", "x": 15, "y": -5}, {"id": "ST2", "x": 15, "y": 5}], "defenders": [{"id": "D_GK", "x": 41.06569158808689, "y": -0.7188676595360513}, {"id": "D_CB1", "x": 26.006923398078342, "y": -10.158367097333894}, {"id": "D_CB2", "x": 26.327029652348134, "y": 8.41667988072555}, {"id": "D_LB", "x": 21.165806450482048, "y": -23.92365381347978}, {"id": "D_RB", "x": 21.882013023900118, "y": 22.50136491500926}, {"id": "D_CM1", "x": 6.045647272154398, "y": -14.575140711337912}, {"id": "D_CM2", "x": 6.27168639192998, "y": -1.4482653697212733}, {"id": "D_CM3", "x": 6.997821648553968, "y": 12.37385278784549}, {"id": "D_LW", "x": -8.244577135504132, "y": -18.073869452436067}, {"id": "D_RW", "x": -6.757254579739772, "y": 16.463020318178263}, {"id": "D_ST", "x": -16.089162237785448, "y": -3.3876221962813933}], "action": {"type": "dribble", "target": {"x": -10, "y": -10}, "success_prob": 0.8, "expected_value": 0.14}, "result": "success", "message": "Dribble successful"}, {"step": 4, "ball": {"x": -10, "y": -10}, "carrier": "CM1", "attackers": [{"id": "GK", "x": -45, "y": 0}, {"id": "CB1", "x": -30, "y": -15}, {"id": "CB2", "x": -35, "y": 15}, {"id": "LB", "x": -30, "y": -30}, {"id": "RB", "x": -30, "y": 30}, {"id": "CM1", "x": -10, "y": -10}, {"id": "CM2", "x": -15, "y": 10}, {"id": "LW", "x": 5, "y": -25}, {"id": "RW", "x": 5, "y": 25}, {"id": "ST1", "x": 15, "y": -5}, {"id": "ST2", "x": 15, "y": 5}], "defenders": [{"id": "D_GK", "x": 39.097927771859425, "y": -1.0765065326271994}, {"id": "D_CB1", "x": 24.00694274231439, "y": -10.149570702049697}, {"id": "D_CB2", "x": 24.543175627605226, "y": 7.512321092186106}, {"id": "D_LB", "x": 19.339756433278534, "y": -23.107846645902146}, {"id": "D_RB", "x": 20.481468641433004, "y": 21.073613034345183}, {"id": "D_CM1", "x": 4.122304241270852, "y": -14.02673248241379}, {"id": "D_CM2", "x": 4.501298210703962, "y": -2.3787091819825155}, {"id": "D_CM3", "x": 5.787939670097764, "y": 10.781312176681398}, {"id": "D_LW", "x": -8.669490475490901, "y": -16.119528475661212}, {"id": "D_RW", "x": -7.000512534206374, "y": 14.477869047471488}, {"id": "D_ST", "x": -14.73435346894208, "y": -4.858843865461506}], "action": {"type": "dribble", "target": {"x": -5, "y": -10}, "success_prob": 0.8, "expected_value": 0.14}, "result": "success", "message": "Dribble successful"}, {"step": 5, "ball": {"x": -5, "y": -10}, "carrier": "CM1", "attackers": [{"id": "GK", "x": -45, "y": 0}, {"id": "CB1", "x": -30, "y": -15}, {"id": "CB2", "x": -35, "y": 15}, {"id": "LB", "x": -30, "y": -30}, {"id": "RB", "x": -30, "y": 30}, {"id": "CM1", "x": -5, "y": -10}, {"id": "CM2", "x": -15, "y": 10}, {"id": "LW", "x": 5, "y": -25}, {"id": "RW", "x": 5, "y": 25}, {"id": "ST1", "x": 15, "y": -5}, {"id": "ST2", "x": 15, "y": 5}], "defenders": [{"id": "D_GK", "x": 37.1376597145058, "y": -1.473179122200835}, {"id": "D_CB1", "x": 22.00696932999718, "y": -10.139258087238188}, {"id": "D_CB2", "x": 22.822726767232908, "y": 6.49248987142279}, {"id": "D_LB", "x": 17.578869318870485, "y": -22.159544705425546}, {"id": "D_RB", "x": 19.21327655308418, "y": 19.52710444172455}, {"id": "D_CM1", "x": 2.292630629733016, "y": -13.219084987994293}, {"id": "D_CM2", "x": 2.941184064961138, "y": -3.6301259200250984}, {"id": "D_CM3", "x": 4.8664677104698235, "y": 9.00623769159086}, {"id": "D_LW", "x": -7.6409579008998, "y": -14.404267345977162}, {"id": "D_RW", "x": -6.83760090697627, "y": 12.484515139678585}, {"id": "D_ST", "x": -12.965852570133766, "y": -5.792869866659645}], "action": {"type": "pass_forward", "target": {"x": 5, "y": -25}, "success_prob": 0.5493060905670013, "expected_value": 0.1574944802029533}, "result": "success", "message": "Pass to LW successful"}, {"step": 6, "ball": {"x": 5, "y": -25}, "carrier": "LW", "attackers": [{"id": "GK", "x": -45, "y": 0}, {"id": "CB1", "x": -30, "y": -15}, {"id": "CB2", "x": -35, "y": 15}, {"id": "LB", "x": -30, "y": -30}, {"id": "RB", "x": -30, "y": 30}, {"id": "CM1", "x": -5, "y": -10}, {"id": "CM2", "x": -15, "y": 10}, {"id": "LW", "x": 5, "y": -25}, {"id": "RW", "x": 5, "y": 25}, {"id": "ST1", "x": 15, "y": -5}, {"id": "ST2", "x": 15, "y": 5}], "defenders": [{"id": "D_GK", "x": 35.52387335107959, "y": -2.6545738797732534}, {"id": "D_CB1", "x": 20.500922942694427, "y": -11.455246035242398}, {"id": "D_CB2", "x": 21.83766473395932, "y": 4.7519000890206}, {"id": "D_LB", "x": 15.627989495610803, "y": -22.60007610634752}, {"id": "D_RB", "x": 18.605099178200913, "y": 17.621816988167975}, {"id": "D_CM1", "x": 2.7405738432777436, "y": -15.168276327355112}, {"id": "D_CM2", "x": 3.1329799731492063, "y": -5.620908261116739}, {"id": "D_CM3", "x": 4.87432104968881, "y": 7.006253110384517}, {"id": "D_LW", "x": -6.108195119592085, "y": -15.689039020726351}, {"id": "D_RW", "x": -6.235320331386981, "y": 10.5773554430963}, {"id": "D_ST", "x": -11.599623799840536, "y": -7.253492660957697}], "action": {"type": "dribble", "target": {"x": 10, "y": -25}, "success_prob": 0.8, "expected_value": 0.14}, "result": "success", "message": "Dribble successful"}, {"step": 7, "ball": {"x": 10, "y": -25}, "carrier": "LW", "attackers": [{"id": "GK", "x": -45, "y": 0}, {"id": "CB1", "x": -30, "y": -15}, {"id": "CB2", "x": -35, "y": 15}, {"id": "LB", "x": -30, "y": -30}, {"id": "RB", "x": -30, "y": 30}, {"id": "CM1", "x": -5, "y": -10}, {"id": "CM2", "x": -15, "y": 10}, {"id": "LW", "x": 10, "y": -25}, {"id": "RW", "x": 5, "y": 25}, {"id": "ST1", "x": 15, "y": -5}, {"id": "ST2", "x": 15, "y": 5}], "defenders": [{"id": "D_GK", "x": 34.01907170392604, "y": -3.971984978376862}, {"id": "D_CB1", "x": 19.27550706021672, "y": -13.035864874485872}, {"id": "D_CB2", "x": 21.098281990142066, "y": 2.893590868749315}, {"id": "D_LB", "x": 13.788273716622152, "y": -23.3845796771107}, {"id": "D_RB", "x": 18.209296843106923, "y": 15.661373030403778}, {"id": "D_CM1", "x": 3.9285620856050434, "y": -16.777215088182288}, {"id": "D_CM2", "x": 3.8009846985075963, "y": -7.506052734863741}, {"id": "D_CM3", "x": 5.190583511148706, "y": 5.031416900601202}, {"id": "D_LW", "x": -4.376651435020024, "y": -16.689916869626312}, {"id": "D_RW", "x": -5.405011403991191, "y": 8.757853564810143}, {"id": "D_ST", "x": -10.054310231620107, "y": -8.523140634166747}], "action": {"type": "dribble", "target": {"x": 15, "y": -25}, "success_prob": 0.8, "expected_value": 0.14}, "result": "success", "message": "Dribble successful"}, {"step": 8, "ball": {"x": 15, "y": -25}, "carrier": "LW", "attackers": [{"id": "GK", "x": -45, "y": 0}, {"id": "CB1", "x": -30, "y": -15}, {"id": "CB2", "x": -35, "y": 15}, {"id": "LB", "x": -30, "y": -30}, {"id": "RB", "x": -30, "y": 30}, {"id": "CM1", "x": -5, "y": -10}, {"id": "CM2", "x": -15, "y": 10}, {"id": "LW", "x": 15, "y": -25}, {"id": "RW", "x": 5, "y": 25}, {"id": "ST1", "x": 15, "y": -5}, {"id": "ST2", "x": 15, "y": 5}], "defenders": [{"id": "D_GK", "x": 32.67748847458349, "y": -5.455276736173291}, {"id": "D_CB1", "x": 18.602471062946705, "y": -14.91921894273187}, {"id": "D_CB2", "x": 20.671118259593086, "y": 0.9397405297254993}, {"id": "D_LB", "x": 14.988375791829194, "y": -24.984503115617603}, {"id": "D_RB", "x": 18.05193141974401, "y": 13.667573611322258}, {"id": "D_CM1", "x": 5.53416861107805, "y": -17.969703111333253}, {"id": "D_CM2", "x": 4.879289426676429, "y": -9.190469225286682}, {"id": "D_CM3", "x": 5.811572392706478, "y": 3.13026650965849}, {"id": "D_LW", "x": -2.5385607776194954, "y": -17.478220577074712}, {"id": "D_RW", "x": -4.370422017768579, "y": 7.046238887987254}, {"id": "D_ST", "x": -8.383285014052325, "y": -9.622083181460528}], "action": {"type": "dribble", "target": {"x": 20, "y": -25}, "success_prob": 0.5, "expected_value": -0.1}, "result": "intercepted", "message": "Tackled by D_LB"}, {"step": 9, "ball": {"x": 14.988375791829194, "y": -24.984503115617603}, "carrier": "D_LB", "attackers": [{"id": "D_GK", "x": 31.33483511407593, "y": -6.937599897133056}, {"id": "D_CB1", "x": 17.926589753269706, "y": -16.80155378415337}, {"id": "D_CB2", "x": 20.242874900094897, "y": -1.0138734610735287}, {"id": "D_LB", "x": 14.988375791829194, "y": -24.984503115617603}, {"id": "D_RB", "x": 17.8939074176766, "y": 11.673826281601013}, {"id": "D_CM1", "x": 7.140333105914738, "y": -19.16143949809251}, {"id": "D_CM2", "x": 5.957465268806333, "y": -10.87496821710813}, {"id": "D_CM3", "x": 6.432160261872815, "y": 1.2289851794383706}, {"id": "D_LW", "x": -0.7000709410287196, "y": -18.265592865609445}, {"id": "D_RW", "x": -3.3359209717725937, "y": 5.334570816825906}, {"id": "D_ST", "x": -6.712002059710756, "y": -10.720633720365008}], "defenders": [{"id": "GK", "x": -45, "y": 0}, {"id": "CB1", "x": -30, "y": -15}, {"id": "CB2", "x": -35, "y": 15}, {"id": "LB", "x": -30, "y": -30}, {"id": "RB", "x": -30, "y": 30}, {"id": "CM1", "x": -5, "y": -10}, {"id": "CM2", "x": -15, "y": 10}, {"id": "LW", "x": 15, "y": -25}, {"id": "RW", "x": 5, "y": 25}, {"id": "ST1", "x": 15, "y": -5}, {"id": "ST2", "x": 15, "y": 5}], "action": null, "result": "end", "message": "Simulation complete"}];
+        let currentFrame = 0;
+        let playing = false;
+        let playInterval = null;
+        let speed = 1000;
+
+        const canvas = document.getElementById('pitch');
+        const ctx = canvas.getContext('2d');
+
+        // Pitch dimensions (in meters, centered at 0,0)
+        const PITCH_LENGTH = 105;
+        const PITCH_WIDTH = 68;
+        const HALF_LENGTH = 52.5;
+        const HALF_WIDTH = 34;
+
+        // Canvas scaling
+        const scaleX = canvas.width / PITCH_LENGTH;
+        const scaleY = canvas.height / PITCH_WIDTH;
+
+        function pitchToCanvas(x, y) {
+            return {
+                x: (x + HALF_LENGTH) * scaleX,
+                y: (HALF_WIDTH - y) * scaleY  // Flip Y axis
+            };
+        }
+
+        function drawPitch() {
+            // Green background
+            ctx.fillStyle = '#2d5a27';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.lineWidth = 2;
+
+            // Center line
+            const center = pitchToCanvas(0, 0);
+            ctx.beginPath();
+            ctx.moveTo(center.x, 0);
+            ctx.lineTo(center.x, canvas.height);
+            ctx.stroke();
+
+            // Center circle
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, 9.15 * scaleX, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Penalty areas
+            const penaltyLength = 16.5;
+            const penaltyWidth = 40.3;
+
+            // Left penalty area
+            const leftPenalty = pitchToCanvas(-HALF_LENGTH, penaltyWidth/2);
+            ctx.strokeRect(leftPenalty.x, leftPenalty.y, penaltyLength * scaleX, penaltyWidth * scaleY);
+
+            // Right penalty area
+            const rightPenalty = pitchToCanvas(HALF_LENGTH - penaltyLength, penaltyWidth/2);
+            ctx.strokeRect(rightPenalty.x, rightPenalty.y, penaltyLength * scaleX, penaltyWidth * scaleY);
+
+            // Goals
+            ctx.fillStyle = '#fff';
+            const goalWidth = 7.32;
+            const leftGoal = pitchToCanvas(-HALF_LENGTH - 2, goalWidth/2);
+            ctx.fillRect(leftGoal.x, leftGoal.y, 2 * scaleX, goalWidth * scaleY);
+
+            const rightGoal = pitchToCanvas(HALF_LENGTH, goalWidth/2);
+            ctx.fillRect(rightGoal.x, rightGoal.y, 2 * scaleX, goalWidth * scaleY);
+        }
+
+        function drawPlayer(x, y, color, label, hasBall) {
+            const pos = pitchToCanvas(x, y);
+
+            // Player circle
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 10, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = hasBall ? '#f1c40f' : '#fff';
+            ctx.lineWidth = hasBall ? 3 : 1;
+            ctx.stroke();
+
+            // Label
+            ctx.fillStyle = '#fff';
+            ctx.font = '9px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, pos.x, pos.y + 3);
+        }
+
+        function drawBall(x, y) {
+            const pos = pitchToCanvas(x, y);
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#f1c40f';
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        function drawAction(frame) {
+            if (!frame.action) return;
+
+            const from = pitchToCanvas(frame.ball.x, frame.ball.y);
+            const to = pitchToCanvas(frame.action.target.x, frame.action.target.y);
+
+            ctx.beginPath();
+            ctx.moveTo(from.x, from.y);
+            ctx.lineTo(to.x, to.y);
+            ctx.strokeStyle = frame.result === 'success' || frame.result === 'goal'
+                ? 'rgba(46, 204, 113, 0.8)'
+                : 'rgba(231, 76, 60, 0.8)';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Arrow head
+            const angle = Math.atan2(to.y - from.y, to.x - from.x);
+            ctx.beginPath();
+            ctx.moveTo(to.x, to.y);
+            ctx.lineTo(to.x - 10 * Math.cos(angle - 0.5), to.y - 10 * Math.sin(angle - 0.5));
+            ctx.lineTo(to.x - 10 * Math.cos(angle + 0.5), to.y - 10 * Math.sin(angle + 0.5));
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function render() {
+            const frame = frames[currentFrame];
+
+            drawPitch();
+
+            // Draw action line first (behind players)
+            drawAction(frame);
+
+            // Draw defenders
+            frame.defenders.forEach(d => {
+                drawPlayer(d.x, d.y, '#e74c3c', d.id.replace('D_', ''), false);
+            });
+
+            // Draw attackers
+            frame.attackers.forEach(a => {
+                const hasBall = a.id === frame.carrier;
+                drawPlayer(a.x, a.y, '#3498db', a.id, hasBall);
+            });
+
+            // Draw ball
+            drawBall(frame.ball.x, frame.ball.y);
+
+            // Update info panel
+            document.getElementById('stepNum').textContent = frame.step;
+            document.getElementById('carrier').textContent = frame.carrier || '-';
+            document.getElementById('ballPos').textContent =
+                `(${frame.ball.x.toFixed(1)}, ${frame.ball.y.toFixed(1)})`;
+
+            if (frame.action) {
+                document.getElementById('actionType').textContent = frame.action.type;
+                document.getElementById('actionTarget').textContent =
+                    `(${frame.action.target.x.toFixed(1)}, ${frame.action.target.y.toFixed(1)})`;
+                document.getElementById('successProb').textContent =
+                    (frame.action.success_prob * 100).toFixed(0) + '%';
+                document.getElementById('expValue').textContent =
+                    frame.action.expected_value.toFixed(3);
+            } else {
+                document.getElementById('actionType').textContent = '-';
+                document.getElementById('actionTarget').textContent = '-';
+                document.getElementById('successProb').textContent = '-';
+                document.getElementById('expValue').textContent = '-';
+            }
+
+            const resultEl = document.getElementById('result');
+            resultEl.textContent = frame.result || '-';
+            resultEl.className = frame.result === 'success' || frame.result === 'goal'
+                ? 'result-success' : 'result-fail';
+            document.getElementById('message').textContent = frame.message;
+
+            // Update button states
+            document.getElementById('backBtn').disabled = currentFrame === 0;
+            document.getElementById('fwdBtn').disabled = currentFrame >= frames.length - 1;
+        }
+
+        function stepForward() {
+            if (currentFrame < frames.length - 1) {
+                currentFrame++;
+                render();
+            } else {
+                stopPlay();
+            }
+        }
+
+        function stepBack() {
+            if (currentFrame > 0) {
+                currentFrame--;
+                render();
+            }
+        }
+
+        function reset() {
+            stopPlay();
+            currentFrame = 0;
+            render();
+        }
+
+        function togglePlay() {
+            if (playing) {
+                stopPlay();
+            } else {
+                startPlay();
+            }
+        }
+
+        function startPlay() {
+            playing = true;
+            document.getElementById('playBtn').textContent = '⏸ Pause';
+            playInterval = setInterval(() => {
+                if (currentFrame < frames.length - 1) {
+                    stepForward();
+                } else {
+                    stopPlay();
+                }
+            }, speed);
+        }
+
+        function stopPlay() {
+            playing = false;
+            document.getElementById('playBtn').textContent = '▶ Play';
+            if (playInterval) {
+                clearInterval(playInterval);
+                playInterval = null;
+            }
+        }
+
+        function updateSpeed() {
+            speed = 2200 - document.getElementById('speed').value;
+            if (playing) {
+                stopPlay();
+                startPlay();
+            }
+        }
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>

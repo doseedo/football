@@ -68,6 +68,8 @@ from .action_executor import (
     DecisionEngine,
     create_test_scenario,
 )
+from .tactical_ui import generate_tactical_ui, run_and_create_ui
+from .visualizer_web import generate_visualization_html, run_and_visualize
 
 __all__ = [
     # Geometry
@@ -113,4 +115,9 @@ __all__ = [
     "DecisionStep",
     "DecisionEngine",
     "create_test_scenario",
+    # Web Visualization & UI
+    "generate_tactical_ui",
+    "run_and_create_ui",
+    "generate_visualization_html",
+    "run_and_visualize",
 ]

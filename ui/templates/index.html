@@ -94,6 +94,27 @@
             text-align: center;
         }
 
+        .coords-display {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.85rem;
+            font-family: monospace;
+        }
+
+        .xg-display {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.85rem;
+        }
+
         /* Analysis panel */
         .analysis-panel {
             width: 350px;
@@ -316,6 +337,8 @@
             </div>
             <div id="pitch">
                 <canvas id="canvas"></canvas>
+                <div class="coords-display" id="coordsDisplay">x: 0.0m, y: 0.0m</div>
+                <div class="xg-display" id="xgDisplay">xG: 0.000</div>
             </div>
             <p class="instructions">Click to move ball | Drag players to reposition | Toggle layers on right panel</p>
         </div>
@@ -323,6 +346,20 @@
         <div class="analysis-panel">
             <div class="panel-section">
                 <h3>Display Options</h3>
+                <div class="toggle-row">
+                    <span>Show xG Zones</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="showXgZones" onchange="render()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-row">
+                    <span>Show Coordinates</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="showCoords" checked onchange="render()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
                 <div class="toggle-row">
                     <span>Show Gaps</span>
                     <label class="toggle-switch">
@@ -396,6 +433,7 @@
         // State
         let state = { players: [], ball: { x: 0, y: 0 } };
         let analysis = null;
+        let xgZones = null;
         let canvas, ctx;
         let draggingPlayer = null;
         let scale = 1;
@@ -415,6 +453,7 @@
             canvas.addEventListener('click', onClick);
 
             loadState();
+            loadXgZones();
         });
 
         function resizeCanvas() {
@@ -457,6 +496,36 @@
             } catch (e) {
                 console.error('Failed to load state:', e);
             }
+        }
+
+        // Load xG zones
+        async function loadXgZones() {
+            try {
+                const res = await fetch('/api/xg_zones');
+                xgZones = await res.json();
+                render();
+            } catch (e) {
+                console.error('Failed to load xG zones:', e);
+            }
+        }
+
+        // Get xG at position (interpolate from zones)
+        function getXgAtPosition(x, y) {
+            if (!xgZones) return 0;
+
+            // Find closest zone
+            let closest = null;
+            let minDist = Infinity;
+
+            for (const zone of xgZones.zones) {
+                const dist = Math.sqrt((zone.x - x)**2 + (zone.y - y)**2);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = zone;
+                }
+            }
+
+            return closest ? closest.xg : 0;
         }
 
         // Run analysis
@@ -529,20 +598,44 @@
 
             // Options
             let optionsHtml = '';
-            analysis.options.slice(0, 5).forEach((opt, i) => {
+            analysis.options.slice(0, 8).forEach((opt, i) => {
                 const isBest = analysis.best_option &&
                     opt.target_x === analysis.best_option.target_x &&
                     opt.target_y === analysis.best_option.target_y;
+
+                // Format action label
+                let actionLabel = opt.action.toUpperCase();
+                if (opt.target_player) {
+                    actionLabel += ` → #${opt.target_player}`;
+                } else if (opt.action === 'shoot') {
+                    actionLabel = '🎯 SHOOT';
+                } else if (opt.action === 'dribble') {
+                    actionLabel = '🏃 DRIBBLE';
+                } else if (opt.action === 'through_ball') {
+                    actionLabel = '⚡ THROUGH BALL';
+                }
+
+                // Extra info for passes
+                let extraInfo = '';
+                if (opt.action === 'pass' && opt.receiver_pressure !== undefined) {
+                    const pressureLabel = opt.receiver_pressure > 0.6 ? 'HIGH' :
+                                          opt.receiver_pressure > 0.3 ? 'MED' : 'LOW';
+                    const facingLabel = opt.receiver_facing_goal ? '→' : '←';
+                    extraInfo = `<span>Pressure: ${pressureLabel} ${facingLabel}</span>`;
+                } else if (opt.action === 'shoot') {
+                    extraInfo = `<span>Block: ${(opt.intercept_prob * 100).toFixed(0)}%</span>`;
+                }
+
                 optionsHtml += `
                     <div class="option-item ${isBest ? 'best' : ''}" onclick="highlightOption(${i})">
                         <div class="option-header">
-                            <span class="option-type">${opt.action}${opt.target_player ? ' → #' + opt.target_player : ''}</span>
+                            <span class="option-type">${actionLabel}</span>
                             <span class="option-rec ${opt.recommendation}">${opt.recommendation}</span>
                         </div>
                         <div class="option-stats">
                             <span>Success: ${(opt.success_prob * 100).toFixed(0)}%</span>
-                            <span>xG Gain: ${opt.xg_gain >= 0 ? '+' : ''}${opt.xg_gain.toFixed(3)}</span>
-                            <span>Intercept: ${(opt.intercept_prob * 100).toFixed(0)}%</span>
+                            <span>xG: ${opt.action === 'shoot' ? opt.xg_target.toFixed(3) : (opt.xg_gain >= 0 ? '+' : '') + opt.xg_gain.toFixed(3)}</span>
+                            ${extraInfo}
                             <span>EV: ${opt.ev >= 0 ? '+' : ''}${opt.ev.toFixed(4)}</span>
                         </div>
                     </div>
@@ -588,6 +681,16 @@
             // Draw pitch
             drawPitch();
 
+            // Draw xG zones if enabled
+            if (document.getElementById('showXgZones').checked && xgZones) {
+                drawXgZones();
+            }
+
+            // Draw coordinate grid if enabled
+            if (document.getElementById('showCoords').checked) {
+                drawCoordinateGrid();
+            }
+
             // Draw gaps if enabled
             if (document.getElementById('showGaps').checked && analysis) {
                 drawGaps();
@@ -608,6 +711,63 @@
 
             // Draw ball
             drawBall();
+        }
+
+        function drawXgZones() {
+            if (!xgZones) return;
+
+            for (const zone of xgZones.zones) {
+                const pos = pitchToCanvas(zone.x, zone.y);
+                const size = zone.width * scale;
+
+                // Color based on xG (red = high, blue = low)
+                const intensity = Math.min(1, zone.xg / 0.3);
+                const r = Math.floor(255 * intensity);
+                const g = Math.floor(50 * (1 - intensity));
+                const b = Math.floor(100 * (1 - intensity));
+
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.4)`;
+                ctx.fillRect(pos.x - size/2, pos.y - size/2, size, size);
+            }
+        }
+
+        function drawCoordinateGrid() {
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.lineWidth = 1;
+            ctx.font = '10px monospace';
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+
+            // Vertical lines every 10m
+            for (let x = -50; x <= 50; x += 10) {
+                const pos = pitchToCanvas(x, 0);
+                const top = pitchToCanvas(x, PITCH_WIDTH/2);
+                const bottom = pitchToCanvas(x, -PITCH_WIDTH/2);
+
+                ctx.beginPath();
+                ctx.moveTo(top.x, top.y);
+                ctx.lineTo(bottom.x, bottom.y);
+                ctx.stroke();
+
+                // Label
+                ctx.textAlign = 'center';
+                ctx.fillText(`${x}m`, pos.x, bottom.y + 12);
+            }
+
+            // Horizontal lines every 10m
+            for (let y = -30; y <= 30; y += 10) {
+                const pos = pitchToCanvas(0, y);
+                const left = pitchToCanvas(-PITCH_LENGTH/2, y);
+                const right = pitchToCanvas(PITCH_LENGTH/2, y);
+
+                ctx.beginPath();
+                ctx.moveTo(left.x, left.y);
+                ctx.lineTo(right.x, right.y);
+                ctx.stroke();
+
+                // Label
+                ctx.textAlign = 'left';
+                ctx.fillText(`${y}m`, left.x - 25, pos.y + 3);
+            }
         }
 
         function drawPitch() {
@@ -667,19 +827,26 @@
         function drawPlayers() {
             state.players.forEach(p => {
                 const pos = pitchToCanvas(p.x, p.y);
-                const radius = 12;
+                const isGK = p.id === 1;  // Player #1 is goalkeeper
+                const radius = isGK ? 14 : 12;
 
                 // Player circle
                 ctx.beginPath();
                 ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-                ctx.fillStyle = p.team === 0 ? '#3b82f6' : '#ef4444';
+
+                // Goalkeeper has different color
+                if (isGK) {
+                    ctx.fillStyle = p.team === 0 ? '#fbbf24' : '#a855f7';  // Yellow/Purple for GKs
+                } else {
+                    ctx.fillStyle = p.team === 0 ? '#3b82f6' : '#ef4444';  // Blue/Red for outfield
+                }
                 ctx.fill();
                 ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2;
+                ctx.lineWidth = isGK ? 3 : 2;
                 ctx.stroke();
 
                 // Jersey number
-                ctx.fillStyle = '#fff';
+                ctx.fillStyle = isGK ? '#000' : '#fff';
                 ctx.font = 'bold 10px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
@@ -721,35 +888,98 @@
             const from = pitchToCanvas(state.ball.x, state.ball.y);
             const to = pitchToCanvas(opt.target_x, opt.target_y);
 
-            // Arrow
-            ctx.beginPath();
-            ctx.moveTo(from.x, from.y);
-            ctx.lineTo(to.x, to.y);
-            ctx.strokeStyle = '#00d4ff';
-            ctx.lineWidth = 3;
-            ctx.stroke();
+            // Different colors for different actions
+            const actionColors = {
+                'shoot': '#ff4444',
+                'dribble': '#44ff44',
+                'pass': '#00d4ff',
+                'through_ball': '#fbbf24'
+            };
+            const color = actionColors[opt.action] || '#00d4ff';
 
-            // Arrowhead
-            const angle = Math.atan2(to.y - from.y, to.x - from.x);
-            const headLen = 15;
-            ctx.beginPath();
-            ctx.moveTo(to.x, to.y);
-            ctx.lineTo(to.x - headLen * Math.cos(angle - Math.PI/6), to.y - headLen * Math.sin(angle - Math.PI/6));
-            ctx.lineTo(to.x - headLen * Math.cos(angle + Math.PI/6), to.y - headLen * Math.sin(angle + Math.PI/6));
-            ctx.closePath();
-            ctx.fillStyle = '#00d4ff';
-            ctx.fill();
+            // For shooting, draw toward goal with special style
+            if (opt.action === 'shoot') {
+                // Draw shot line
+                ctx.beginPath();
+                ctx.moveTo(from.x, from.y);
+                ctx.lineTo(to.x, to.y);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 4;
+                ctx.setLineDash([10, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
 
-            // Label
-            const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
-            ctx.fillStyle = '#00d4ff';
-            ctx.font = 'bold 12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(`${(opt.success_prob * 100).toFixed(0)}%`, mid.x, mid.y - 10);
+                // Goal target circle
+                ctx.beginPath();
+                ctx.arc(to.x, to.y, 15, 0, Math.PI * 2);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // xG label
+                ctx.fillStyle = color;
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`SHOOT xG: ${(opt.success_prob * 100).toFixed(0)}%`, (from.x + to.x) / 2, (from.y + to.y) / 2 - 15);
+            }
+            // For dribbling, draw dashed path
+            else if (opt.action === 'dribble') {
+                ctx.beginPath();
+                ctx.moveTo(from.x, from.y);
+                ctx.lineTo(to.x, to.y);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Target circle
+                ctx.beginPath();
+                ctx.arc(to.x, to.y, 8, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.globalAlpha = 0.5;
+                ctx.fill();
+                ctx.globalAlpha = 1;
+
+                // Label
+                ctx.fillStyle = color;
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`DRIBBLE ${(opt.success_prob * 100).toFixed(0)}%`, (from.x + to.x) / 2, (from.y + to.y) / 2 - 10);
+            }
+            // Standard pass/through ball
+            else {
+                // Arrow
+                ctx.beginPath();
+                ctx.moveTo(from.x, from.y);
+                ctx.lineTo(to.x, to.y);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // Arrowhead
+                const angle = Math.atan2(to.y - from.y, to.x - from.x);
+                const headLen = 15;
+                ctx.beginPath();
+                ctx.moveTo(to.x, to.y);
+                ctx.lineTo(to.x - headLen * Math.cos(angle - Math.PI/6), to.y - headLen * Math.sin(angle - Math.PI/6));
+                ctx.lineTo(to.x - headLen * Math.cos(angle + Math.PI/6), to.y - headLen * Math.sin(angle + Math.PI/6));
+                ctx.closePath();
+                ctx.fillStyle = color;
+                ctx.fill();
+
+                // Label
+                const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+                ctx.fillStyle = color;
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                const actionLabel = opt.action === 'through_ball' ? 'THRU' : 'PASS';
+                ctx.fillText(`${actionLabel} ${(opt.success_prob * 100).toFixed(0)}%`, mid.x, mid.y - 10);
+            }
         }
 
         function drawAllOptions() {
-            analysis.options.slice(0, 5).forEach((opt, i) => {
+            analysis.options.slice(0, 8).forEach((opt, i) => {
                 const from = pitchToCanvas(state.ball.x, state.ball.y);
                 const to = pitchToCanvas(opt.target_x, opt.target_y);
 
@@ -767,8 +997,30 @@
                 ctx.lineTo(to.x, to.y);
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 2;
-                ctx.globalAlpha = 0.6;
+                ctx.globalAlpha = 0.5;
+
+                // Different line style for different actions
+                if (opt.action === 'shoot') {
+                    ctx.setLineDash([8, 4]);
+                    ctx.lineWidth = 3;
+                } else if (opt.action === 'dribble') {
+                    ctx.setLineDash([4, 4]);
+                } else if (opt.action === 'through_ball') {
+                    ctx.setLineDash([12, 4]);
+                } else {
+                    ctx.setLineDash([]);
+                }
+
                 ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 1;
+
+                // Small target dot
+                ctx.beginPath();
+                ctx.arc(to.x, to.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.globalAlpha = 0.6;
+                ctx.fill();
                 ctx.globalAlpha = 1;
             });
         }
@@ -814,12 +1066,22 @@
         }
 
         function onMouseMove(e) {
-            if (!draggingPlayer) return;
-
             const rect = canvas.getBoundingClientRect();
             const cx = e.clientX - rect.left;
             const cy = e.clientY - rect.top;
             const pitch = canvasToPitch(cx, cy);
+
+            // Update coordinate display
+            if (Math.abs(pitch.x) <= PITCH_LENGTH/2 + 5 && Math.abs(pitch.y) <= PITCH_WIDTH/2 + 5) {
+                document.getElementById('coordsDisplay').textContent =
+                    `x: ${pitch.x.toFixed(1)}m, y: ${pitch.y.toFixed(1)}m`;
+
+                // Update xG display
+                const xg = getXgAtPosition(pitch.x, pitch.y);
+                document.getElementById('xgDisplay').textContent = `xG: ${xg.toFixed(3)}`;
+            }
+
+            if (!draggingPlayer) return;
 
             // Clamp to pitch
             pitch.x = Math.max(-PITCH_LENGTH/2, Math.min(PITCH_LENGTH/2, pitch.x));

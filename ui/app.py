@@ -25,32 +25,36 @@ engine = DecisionEngine()
 
 def create_default_scenario():
     """Create default game scenario."""
+    import math
+
+    # Team A (attacking left to right, facing_angle=0 means facing goal)
     team_a = [
-        PlayerState(player_id=1, team=0, position=(-45, 0), max_speed=6.0),
-        PlayerState(player_id=2, team=0, position=(-30, -20), max_speed=7.5),
-        PlayerState(player_id=3, team=0, position=(-32, -5), max_speed=7.5),
-        PlayerState(player_id=4, team=0, position=(-32, 5), max_speed=7.5),
-        PlayerState(player_id=5, team=0, position=(-30, 20), max_speed=7.5),
-        PlayerState(player_id=6, team=0, position=(-10, -15), max_speed=8.0),
-        PlayerState(player_id=7, team=0, position=(-5, 0), max_speed=8.0),
-        PlayerState(player_id=8, team=0, position=(-10, 15), max_speed=8.0),
-        PlayerState(player_id=9, team=0, position=(20, -12), max_speed=8.5),
-        PlayerState(player_id=10, team=0, position=(25, 5), max_speed=8.5),
-        PlayerState(player_id=11, team=0, position=(18, 18), max_speed=8.5),
+        PlayerState(player_id=1, team=0, position=(-45, 0), max_speed=6.0, is_goalkeeper=True, facing_angle=0),
+        PlayerState(player_id=2, team=0, position=(-30, -20), max_speed=7.5, facing_angle=0.2),
+        PlayerState(player_id=3, team=0, position=(-32, -5), max_speed=7.5, facing_angle=0),
+        PlayerState(player_id=4, team=0, position=(-32, 5), max_speed=7.5, facing_angle=0),
+        PlayerState(player_id=5, team=0, position=(-30, 20), max_speed=7.5, facing_angle=-0.2),
+        PlayerState(player_id=6, team=0, position=(-10, -15), max_speed=8.0, facing_angle=0.3),
+        PlayerState(player_id=7, team=0, position=(-5, 0), max_speed=8.0, facing_angle=0),
+        PlayerState(player_id=8, team=0, position=(-10, 15), max_speed=8.0, facing_angle=-0.3),
+        PlayerState(player_id=9, team=0, position=(20, -12), max_speed=8.5, facing_angle=0.4),
+        PlayerState(player_id=10, team=0, position=(25, 5), max_speed=8.5, facing_angle=0),
+        PlayerState(player_id=11, team=0, position=(18, 18), max_speed=8.5, facing_angle=-0.4),
     ]
 
+    # Team B (defending, facing_angle=pi means facing own goal/attackers)
     team_b = [
-        PlayerState(player_id=1, team=1, position=(45, 0), max_speed=6.0),
-        PlayerState(player_id=2, team=1, position=(30, -22), max_speed=7.5),
-        PlayerState(player_id=3, team=1, position=(32, -8), max_speed=7.5),
-        PlayerState(player_id=4, team=1, position=(33, 3), max_speed=7.5),
-        PlayerState(player_id=5, team=1, position=(30, 18), max_speed=7.5),
-        PlayerState(player_id=6, team=1, position=(15, -10), max_speed=8.0),
-        PlayerState(player_id=7, team=1, position=(10, 5), max_speed=8.0),
-        PlayerState(player_id=8, team=1, position=(12, 15), max_speed=8.0),
-        PlayerState(player_id=9, team=1, position=(-15, -5), max_speed=8.5),
-        PlayerState(player_id=10, team=1, position=(-20, 10), max_speed=8.5),
-        PlayerState(player_id=11, team=1, position=(-25, 0), max_speed=8.5),
+        PlayerState(player_id=1, team=1, position=(50, 0), max_speed=6.0, is_goalkeeper=True, facing_angle=math.pi),
+        PlayerState(player_id=2, team=1, position=(35, -22), max_speed=7.5, facing_angle=math.pi),
+        PlayerState(player_id=3, team=1, position=(38, -8), max_speed=7.5, facing_angle=math.pi),
+        PlayerState(player_id=4, team=1, position=(38, 3), max_speed=7.5, facing_angle=math.pi),
+        PlayerState(player_id=5, team=1, position=(35, 18), max_speed=7.5, facing_angle=math.pi),
+        PlayerState(player_id=6, team=1, position=(20, -10), max_speed=8.0, facing_angle=math.pi),
+        PlayerState(player_id=7, team=1, position=(15, 5), max_speed=8.0, facing_angle=math.pi),
+        PlayerState(player_id=8, team=1, position=(18, 15), max_speed=8.0, facing_angle=math.pi),
+        PlayerState(player_id=9, team=1, position=(-10, -5), max_speed=8.5, facing_angle=math.pi),
+        PlayerState(player_id=10, team=1, position=(-15, 10), max_speed=8.5, facing_angle=math.pi),
+        PlayerState(player_id=11, team=1, position=(-20, 0), max_speed=8.5, facing_angle=math.pi),
     ]
 
     return team_a, team_b
@@ -148,6 +152,8 @@ def analyze():
             'xg_gain': to_native(opt.xg_gain),
             'ev': to_native(opt.expected_value),
             'recommendation': opt.recommendation,
+            'receiver_pressure': to_native(opt.receiver_pressure),
+            'receiver_facing_goal': bool(opt.receiver_facing_goal),
         })
 
     best = None
@@ -213,6 +219,32 @@ def reset():
     current_state['ball_position'] = (-5, 0)
     current_state['ball_carrier_id'] = 7
     return jsonify({'success': True})
+
+
+@app.route('/api/xg_zones')
+def get_xg_zones():
+    """Get xG zone data for visualization."""
+    # Grid of xG values across the pitch
+    # Pitch: x from -52.5 to 52.5, y from -34 to 34
+    zones = []
+    step = 5  # 5 meter grid
+
+    for x in range(-50, 55, step):
+        for y in range(-30, 35, step):
+            xg = engine.xg_model.get_xg((x, y))
+            zones.append({
+                'x': x,
+                'y': y,
+                'xg': float(xg),
+                'width': step,
+                'height': step,
+            })
+
+    return jsonify({
+        'zones': zones,
+        'pitch_length': 105,
+        'pitch_width': 68,
+    })
 
 
 if __name__ == '__main__':

@@ -6,12 +6,21 @@ Fetches event data from Wyscout API for use with the decision analysis system.
 Usage:
     from wyscout_api import WyscoutAPI
 
-    api = WyscoutAPI(api_key="your_key")
+    api = WyscoutAPI(
+        client_id="t5ckmeb-dph3oesye-8h5xkq7-0cqz8ae5va",
+        client_secret=":Te?j&O11wZNnZs6k@kx,8rQKnD3z"
+    )
     events = api.get_match_events(match_id=12345)
+
+CLI:
+    python wyscout_api.py --client-id YOUR_ID --client-secret YOUR_SECRET test
+    python wyscout_api.py --client-id YOUR_ID --client-secret YOUR_SECRET competitions
+    python wyscout_api.py --client-id YOUR_ID --client-secret YOUR_SECRET events 12345
 """
 
 import json
 import os
+import base64
 from pathlib import Path
 from typing import Dict, List, Optional
 from dataclasses import dataclass
@@ -27,22 +36,24 @@ except ImportError:
 @dataclass
 class WyscoutConfig:
     """Wyscout API configuration."""
-    api_key: str
+    client_id: str
+    client_secret: str
     base_url: str = "https://apirest.wyscout.com/v3"
-    # Alternative base URLs if needed
-    # base_url: str = "https://api.wyscout.com/v2"
 
 
 class WyscoutAPI:
     """
     Client for Wyscout REST API.
 
+    Wyscout uses Basic Authentication with client_id:client_secret encoded in base64.
+
     Wyscout API docs: https://apidocs.wyscout.com/
     """
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
         config_path: Optional[str] = None,
         base_url: str = "https://apirest.wyscout.com/v3"
     ):
@@ -50,33 +61,40 @@ class WyscoutAPI:
         Initialize Wyscout API client.
 
         Args:
-            api_key: Wyscout API key (or set WYSCOUT_API_KEY env var)
-            config_path: Path to JSON config with api_key
+            client_id: Wyscout client ID (or set WYSCOUT_CLIENT_ID env var)
+            client_secret: Wyscout client secret (or set WYSCOUT_CLIENT_SECRET env var)
+            config_path: Path to JSON config with client_id and client_secret
             base_url: API base URL
         """
         if not HAS_REQUESTS:
             raise ImportError("requests library required. Install with: pip install requests")
 
-        # Load API key from various sources
-        self.api_key = api_key or os.environ.get('WYSCOUT_API_KEY')
+        # Load credentials from various sources
+        self.client_id = client_id or os.environ.get('WYSCOUT_CLIENT_ID')
+        self.client_secret = client_secret or os.environ.get('WYSCOUT_CLIENT_SECRET')
 
-        if config_path and not self.api_key:
+        if config_path and (not self.client_id or not self.client_secret):
             with open(config_path) as f:
                 config = json.load(f)
-                self.api_key = config.get('api_key', config.get('apiKey'))
+                self.client_id = self.client_id or config.get('client_id', config.get('clientId'))
+                self.client_secret = self.client_secret or config.get('client_secret', config.get('clientSecret'))
 
-        if not self.api_key:
+        if not self.client_id or not self.client_secret:
             raise ValueError(
-                "Wyscout API key required. Provide via:\n"
-                "  - api_key parameter\n"
-                "  - WYSCOUT_API_KEY environment variable\n"
-                "  - config_path JSON file with 'api_key' field"
+                "Wyscout credentials required. Provide via:\n"
+                "  - client_id and client_secret parameters\n"
+                "  - WYSCOUT_CLIENT_ID and WYSCOUT_CLIENT_SECRET environment variables\n"
+                "  - config_path JSON file with 'client_id' and 'client_secret' fields"
             )
+
+        # Create Basic Auth token
+        credentials = f"{self.client_id}:{self.client_secret}".encode('ascii')
+        access_token = base64.b64encode(credentials).decode('ascii')
 
         self.base_url = base_url.rstrip('/')
         self.session = requests.Session()
         self.session.headers.update({
-            'Authorization': f'Bearer {self.api_key}',
+            'Authorization': f'Basic {access_token}',
             'Content-Type': 'application/json',
         })
 
@@ -255,10 +273,10 @@ class WyscoutAPI:
         return saved_files
 
 
-def test_connection(api_key: str) -> bool:
-    """Test API connection with provided key."""
+def test_connection(client_id: str, client_secret: str) -> bool:
+    """Test API connection with provided credentials."""
     try:
-        api = WyscoutAPI(api_key=api_key)
+        api = WyscoutAPI(client_id=client_id, client_secret=client_secret)
         competitions = api.get_competitions()
         print(f"Connection successful! Found {len(competitions)} competitions")
         return True
@@ -272,8 +290,9 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Wyscout API Client')
-    parser.add_argument('--api-key', '-k', help='Wyscout API key (or set WYSCOUT_API_KEY env)')
-    parser.add_argument('--config', '-c', help='Path to config JSON with api_key')
+    parser.add_argument('--client-id', '-i', help='Wyscout client ID (or set WYSCOUT_CLIENT_ID env)')
+    parser.add_argument('--client-secret', '-s', help='Wyscout client secret (or set WYSCOUT_CLIENT_SECRET env)')
+    parser.add_argument('--config', '-c', help='Path to config JSON with credentials')
 
     subparsers = parser.add_subparsers(dest='command', help='Commands')
 
@@ -301,7 +320,8 @@ if __name__ == '__main__':
     # Initialize API
     try:
         api = WyscoutAPI(
-            api_key=args.api_key,
+            client_id=args.client_id,
+            client_secret=args.client_secret,
             config_path=args.config
         )
     except ValueError as e:

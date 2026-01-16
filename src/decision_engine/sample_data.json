@@ -1,0 +1,81 @@
+{
+  "events": [
+    {
+      "eventId": 1,
+      "eventName": "Pass",
+      "subEventName": "Simple pass",
+      "eventSec": 120.0,
+      "matchPeriod": "1H",
+      "playerId": "player_10",
+      "teamId": "home",
+      "positions": [{"x": 45, "y": 50}, {"x": 55, "y": 45}],
+      "tags": [{"name": "accurate"}]
+    },
+    {
+      "eventId": 2,
+      "eventName": "Pass",
+      "subEventName": "Through pass",
+      "eventSec": 125.0,
+      "matchPeriod": "1H",
+      "playerId": "player_7",
+      "teamId": "home",
+      "positions": [{"x": 55, "y": 45}, {"x": 78, "y": 40}],
+      "tags": [{"name": "accurate"}]
+    },
+    {
+      "eventId": 3,
+      "eventName": "Shot",
+      "subEventName": "Shot",
+      "eventSec": 130.0,
+      "matchPeriod": "1H",
+      "playerId": "player_9",
+      "teamId": "home",
+      "positions": [{"x": 88, "y": 48}],
+      "tags": [{"name": "Goal"}]
+    }
+  ],
+  "tracking": [
+    {
+      "timestamp": 119.9,
+      "period": 1,
+      "players": [
+        {"playerId": "player_10", "team": "home", "x": 47.25, "y": 34.0},
+        {"playerId": "player_7", "team": "home", "x": 57.75, "y": 30.6},
+        {"playerId": "player_9", "team": "home", "x": 68.25, "y": 40.8},
+        {"playerId": "player_11", "team": "home", "x": 52.5, "y": 20.4},
+        {"playerId": "opp_4", "team": "away", "x": 55.0, "y": 32.0},
+        {"playerId": "opp_5", "team": "away", "x": 62.0, "y": 38.0},
+        {"playerId": "opp_6", "team": "away", "x": 75.0, "y": 34.0}
+      ],
+      "ball": {"x": 47.25, "y": 34.0, "z": 0}
+    },
+    {
+      "timestamp": 124.9,
+      "period": 1,
+      "players": [
+        {"playerId": "player_10", "team": "home", "x": 52.0, "y": 36.0},
+        {"playerId": "player_7", "team": "home", "x": 57.75, "y": 30.6},
+        {"playerId": "player_9", "team": "home", "x": 78.0, "y": 30.0},
+        {"playerId": "player_11", "team": "home", "x": 60.0, "y": 22.0},
+        {"playerId": "opp_4", "team": "away", "x": 60.0, "y": 34.0},
+        {"playerId": "opp_5", "team": "away", "x": 70.0, "y": 35.0},
+        {"playerId": "opp_6", "team": "away", "x": 82.0, "y": 32.0}
+      ],
+      "ball": {"x": 57.75, "y": 30.6, "z": 0.5}
+    },
+    {
+      "timestamp": 129.8,
+      "period": 1,
+      "players": [
+        {"playerId": "player_10", "team": "home", "x": 58.0, "y": 38.0},
+        {"playerId": "player_7", "team": "home", "x": 70.0, "y": 32.0},
+        {"playerId": "player_9", "team": "home", "x": 92.4, "y": 32.6},
+        {"playerId": "player_11", "team": "home", "x": 75.0, "y": 20.0},
+        {"playerId": "opp_4", "team": "away", "x": 80.0, "y": 36.0},
+        {"playerId": "opp_5", "team": "away", "x": 88.0, "y": 30.0},
+        {"playerId": "opp_6", "team": "away", "x": 95.0, "y": 34.0}
+      ],
+      "ball": {"x": 92.4, "y": 32.6, "z": 1.2}
+    }
+  ]
+}

@@ -1,540 +1,588 @@
-# Marshall Men's Soccer
-## AI-Powered Program Intelligence Platform
+# Marshall Men's Soccer AI-Powered Program Intelligence Platform
 
----
+## Overview
+This proposal outlines a comprehensive AI system designed to transform Marshall Men's Soccer through advanced tracking technology and intelligent program management. The initiative leverages 26,000+ lines of production code across multiple analytical domains.
 
-# The Vision
+**The platform is built around Marshall's Game Model 2.0** - a comprehensive tactical framework that defines how the team plays in all phases of the game. The AI system analyzes, measures, and optimizes performance against these principles.
 
-Transform Marshall Men's Soccer into one of the most technologically advanced college soccer programs in the nation through a comprehensive AI platform that unifies **match analysis**, **player development**, **tactical intelligence**, and **program operations** into a single, intelligent system.
+## Core Technology Components
 
----
+The platform integrates several sophisticated systems:
 
-# Part 1: What We've Already Built
+- **Real-time player and ball detection** using YOLOv8 technology capable of identifying all 22 players with processing speeds exceeding 10 frames per second
+- **Advanced camera calibration** supporting dynamic footage analysis with 29-point keypoint detection
+- **Physical metrics engine** tracking speed, distance, acceleration, sprint intensity, and precise positioning
 
-We have developed a **production-ready football tracking and analysis system** with over 26,000 lines of code. This isn't a concept—it's working technology.
-
-## Core Tracking Technology
-
-### Real-Time Player & Ball Detection
-- **YOLOv8-based detection** identifying all 22 players on the pitch
-- **Ball tracking** with temporal consistency for reliable possession analysis
-- **Team classification** using jersey color analysis (HSV/RGB clustering)
-- **Processing speed**: 10+ FPS real-time analysis
-
-### Advanced Camera Calibration
-- **Automatic pitch detection** from broadcast/game footage
-- **29-point keypoint detection** for precise coordinate mapping
-- **Rotating camera support** (±45°) for broadcast footage
-- **Frame-by-frame homography updates** for dynamic camera movement
-
-### Physical Metrics Engine
-| Metric | Capability |
-|--------|------------|
-| Speed | Instant velocity calculation |
-| Distance | Total distance covered per player |
-| Acceleration | Explosive movement detection |
-| Sprints | Sprint count and intensity |
-| Positioning | Real-time x,y,z coordinates |
-
----
-
-## Tactical Analysis Suite
-
-### Decision Engine (The Brain)
-A complete **tactical laboratory** that evaluates game situations:
-
-- **Elimination Metric**: Identifies when defenders are beaten/eliminated
-- **Defense Physics**: Models defensive behavior using attraction-based physics
-- **State Scoring**: Evaluates tactical advantage through composite scoring
-- **Block Analysis**: Low/Mid/High defensive block identification
-- **Space Control**: Voronoi-based pitch control visualization
-
-**Key Principle**: Players are treated as physically equal—only positioning matters. This creates objective tactical evaluation.
-
-### 3D Ball Tracking
-- **Height estimation** from standard video
-- **Physics modeling**: Gravity, air resistance, bounce detection
-- **Aerial ball classification**: Headers, volleys, long balls
-- **Shot trajectory analysis**
-
-### Graph Neural Network Tactical Analysis
-- **Team state classification**: ATTACKING, DEFENDING, TRANSITION, SET_PIECE
-- **Passing lane availability** scoring
-- **Expected Threat (xT)** grid mapping
-- **Pitch control estimation**
-- **Pressing intensity** measurement
-
----
-
-## Player Intelligence System
-
-### Re-Identification Technology
-- **512-dimensional appearance embeddings** for consistent player tracking
-- **Jersey number recognition** (1-99) using deep learning
-- **Stable player IDs** across entire matches
-- **Works with any camera angle**
-
-### Trajectory Prediction
-- **Off-screen player extrapolation** using transformer models
-- **Multi-entity prediction** for team movement forecasting
-- **Motion modeling** with Kalman filtering
-- **Uncertainty quantification** for prediction confidence
-
----
-
-## Data Infrastructure
-
-### Labeling & Training Tools
-- **Web-based annotation interface**
-- **Automatic field line detection**
-- **Cloud synchronization** (Google Cloud Storage)
-- **SoccerNet integration** for professional-grade datasets
-
-### Training Pipeline
-- 6 complete model training configurations
-- Pre-trained model support (transfer learning)
-- Automated training with checkpointing
-- Weights & Biases integration for experiment tracking
-
----
-
-# Part 2: The Marshall Soccer AI Platform
-
-Building on our tracking technology, we propose a **comprehensive program-wide AI assistant** that becomes the intelligent backbone of Marshall Men's Soccer operations.
+The tactical analysis suite includes elimination metrics, defensive physics modeling, block analysis, and Voronoi-based pitch control visualization. Additional capabilities encompass 3D ball trajectory analysis and Graph Neural Network-based team state classification.
 
 ## Platform Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    MARSHALL SOCCER AI PLATFORM                       │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │   MATCH      │  │   PLAYER     │  │   OPPONENT   │              │
-│  │   ANALYSIS   │  │   DEVELOPMENT│  │   INTEL      │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│                                                                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │   TRAINING   │  │   RECRUITMENT│  │   NCAA       │              │
-│  │   OPTIMIZER  │  │   ANALYTICS  │  │   COMPLIANCE │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│                                                                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │   FINANCIAL  │  │   MEETING    │  │   UNIFIED    │              │
-│  │   INTELLIGENCE│ │   ASSISTANT  │  │   DATA LAYER │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+The proposed system comprises nine integrated modules:
+
+1. **Match Analysis Intelligence** - pre-match opponent breakdown, live tactical support, post-match performance evaluation
+2. **Player Development Engine** - comprehensive individual profiles with historical trend analysis
+3. **Training Optimization** - AI-generated session plans based on opponent analysis and player status
+4. **Opponent Intelligence** - scouting automation and conference-specific analysis
+5. **Recruitment Analytics** - prospect evaluation and transfer portal monitoring
+6. **NCAA Compliance Assistant** - rules database and compliance monitoring
+7. **Financial Intelligence** - budget management and NIL tracking
+8. **Meeting & Communication Assistant** - scheduling and knowledge management
+9. **Unified Data Layer** - integrating all program data with natural language interface
+
+## Proposed Implementation
+
+The deployment follows a four-phase timeline spanning twelve months, beginning with foundational match analysis infrastructure and progressing toward full operational integration and advanced predictive capabilities.
 
 ---
 
-## Module 1: Match Analysis Intelligence
+# Game Model 2.0 - Tactical Framework
 
-### Pre-Match
-- **Automated opponent breakdown** from game film
-- **Formation and style identification**
-- **Key player threat assessment**
-- **Set piece pattern recognition**
-- **Suggested tactical approach** based on opponent weaknesses
+The AI platform is designed to analyze, measure, and optimize performance against Marshall's comprehensive Game Model. This section details the tactical principles that form the foundation of the program.
 
-### Live Match
-- **Real-time tactical dashboard**
-- **Substitution impact predictions**
-- **Formation adjustment recommendations**
-- **Momentum and pressing intensity tracking**
-- **Halftime report generation**
-
-### Post-Match
-- **Automatic highlight generation**
-- **Individual player performance grades**
-- **Tactical execution analysis**
-- **Expected goals (xG) breakdown**
-- **Comparative analysis vs. game plan**
+## The Goal
+**To make this the best "TEAM" you'll ever play for.**
 
 ---
 
-## Module 2: Player Development Engine
+## Championship Behaviors
 
-### Individual Player Profiles
-Every player gets a comprehensive AI-powered profile:
+### Required Attributes
+- **Respect / Diversity**
+- **Passion**
+- **Game Spirit**
 
-| Category | Metrics |
+### Championship Behaviors
+- **Humility**
+- **Intensity**
+- **Team Trust**
+- **Grit**
+
+### Aspirations
+- **Joy**
+- **Excellence**
+- **Bravery**
+
+---
+
+## Philosophy
+
+### The Ideal Game
+The ideal game distribution emphasizes:
+- **Positional Possession** (Primary focus - largest portion)
+- **Counter-Press**
+- **Counter-Attacks**
+- **Organized Defense**
+- **Attacking Set Pieces**
+
+Marshall aims to be in the top tier of NCAA D1 programs for both field tilt and possession percentage.
+
+---
+
+### Attacking Philosophy
+*Goal: Create Chances with Counter-Prevention*
+
+| Principle | Description |
+|-----------|-------------|
+| **+1 Football** | Find the free man |
+| **Keep the Ball** | To move the opponent |
+| **Master the Rhythm** | Control tempo |
+| **No Possession without Penetration** | Always look to progress |
+| **Maximize your Position** | Optimal positioning |
+
+---
+
+### Defending Philosophy
+*Goal: Win the Ball Back*
+
+**Based on position relative to ball:**
+
+| Position | Actions |
 |----------|---------|
-| **Physical** | Speed, stamina, acceleration, work rate |
-| **Technical** | Pass completion, first touch, shooting accuracy |
-| **Tactical** | Positioning, defensive actions, pressing triggers |
-| **Load** | Training load, fatigue indicators, injury risk |
-| **Development** | Progress tracking, areas for improvement, personalized drills |
+| **On Ball** | Prevent Forward Play, Don't Get Eliminated |
+| **Ball Near** | Close to your man (Tighten Goal-Side / Ball-Side Position), Defend Central Passing Lines |
+| **Ball Far** | Defend Depth (Read ball-carrier intention), Protect Middle & Keep Access to Your Man |
+| **1v2 / Eliminated** | Cut off pass line to your man, Press ball carrier ASAP, Make Return |
 
-### Performance Trajectory
-- **Historical trend analysis**
-- **Peer comparison** (conference, national)
-- **Predicted development curve**
-- **Personalized training recommendations**
-- **Strength/weakness heatmaps**
+**Exchange Policy:**
+- Give a man / Take a man
+- Stay with man if he tries to get free
+- Trade your man for a more dangerous man
 
-### Injury Prevention
-- **Workload monitoring**
-- **Fatigue pattern recognition**
-- **Risk scoring** based on training/match load
-- **Recovery recommendations**
-- **Return-to-play protocols**
+**Long Ball:** Win Race against your man
+**Short Ball:** Press your man as ball travels
 
 ---
 
-## Module 3: Training Optimization
+### Attacking Transition Philosophy
+*Goal: Create Chances - Travel Together*
 
-### Session Planning
-- **AI-generated session plans** based on:
-  - Upcoming opponent analysis
-  - Player fatigue levels
-  - Areas needing improvement
-  - Season phase (pre-season, conference play, tournament)
-  - Available facility/time constraints
-
-### Periodization Intelligence
-- **Automated load management**
-- **Peak performance timing** for key matches
-- **Recovery day optimization**
-- **Integration with academic calendar**
-
-### Drill Library & Recommendations
-- **Searchable drill database**
-- **AI-suggested drills** matching tactical goals
-- **Effectiveness tracking** per drill
-- **Video library integration**
+| Principle | Description |
+|-----------|-------------|
+| **See it, Play it** | Quick recognition and action |
+| **Connect 2 Passes with minimal touches** | Fast ball movement |
+| **Identify the Rhythm** | Organized vs Disorganized defense |
+| **Exploit imbalances** | Spatial / numerical advantages |
+| **Regain Structure / Get Open** | Create passing options |
 
 ---
 
-## Module 4: Opponent Intelligence
+### Defending Transition Philosophy
+*Goal: Win the Ball Back*
 
-### Scouting Automation
-- **Automated video analysis** of opponent matches
-- **Formation tendencies** (home vs. away, winning vs. losing)
-- **Key player reports** with video clips
-- **Set piece patterns** with success rates
-- **Pressing triggers and defensive vulnerabilities**
+**Based on position relative to ball carrier:**
 
-### Conference Intelligence
-- **Sun Belt opponent database**
-- **Historical performance trends**
-- **Referee tendencies** (fouls, cards)
-- **Travel and scheduling impact analysis**
+| Position | Actions |
+|----------|---------|
+| **Close to ball carrier** | Prevent Forward Play (Overload the ball-carrier) |
+| **Ahead of ball carrier** | Make Return (to a man, ball carrier, or behind the ball) |
+| **Ball Near** | Mark a man (Tighten Goal-Side / Ball-Side Position), Squeeze the space (1st step forward) |
+| **Ball Far** | Cut the pitch in half (Loosen Goal-Side / Ball-Side Position), Defend Depth & Counter-Prevent |
 
-### Match Preparation Reports
-AI-generated comprehensive reports including:
-- Expected formation and lineup
-- Tactical approach predictions
-- Danger players and how to neutralize
-- Opportunities to exploit
-- Set piece preparation priorities
+**Emergency Defending:**
+- Don't step towards ball-carrier if you are in backline and another attacker is in your space and can run deep (vertical 1v2)
+- Identify (horizontal) 1v2 and cut pass line
+- Reduce space in behind until top of the D, or attack slows down
+- Return behind the ball centrally as fast as possible, track runners out of midfield if necessary
 
 ---
 
-## Module 5: Recruitment Analytics
+### Attacking Set Piece Philosophy
+*Goal: Create Chances with Counter-Prevention*
 
-### Prospect Evaluation
-- **Video analysis scoring** for recruits
-- **Physical/technical/tactical grading**
-- **Fit analysis** for Marshall's style of play
-- **Development potential modeling**
-- **Academic eligibility verification**
-
-### Transfer Portal Intelligence
-- **Daily portal monitoring**
-- **Automatic fit scoring** for available players
-- **NIL market analysis**
-- **Competition tracking** (who else is recruiting)
-
-### Recruitment Pipeline
-- **CRM integration** for prospect tracking
-- **Communication scheduling**
-- **Visit planning optimization**
-- **Scholarship allocation modeling**
-- **Signing day preparation**
-
-### Roster Management
-- **Graduation/eligibility tracking**
-- **Position needs forecasting**
-- **Depth chart optimization**
-- **Multi-year roster planning**
+| Principle | Description |
+|-----------|-------------|
+| **Find the target man** | Identify key aerial threats |
+| **Create space in target areas** | Movement to open zones |
+| **Timing of runs and dismarking of opponent** | Coordinated movement |
+| **Accurate deliveries** | Quality service |
+| **Exploit 1st post, 2nd post, or short** | Vary delivery targets |
 
 ---
 
-## Module 6: NCAA Compliance Assistant
+### Defending Set Piece Philosophy
 
-### Rules Database
-- **Searchable NCAA rulebook** with AI interpretation
-- **Division I soccer-specific regulations**
-- **Sun Belt conference rules**
-- **Instant answers** to compliance questions
+**Top of Box / High:**
+- Get open diagonal from ball-carrier if we regain / chase if cleared
+- High pressure on perimeter players closest to center of pitch
 
-### Compliance Monitoring
-- **Practice hour tracking** vs. limits
-- **Contact period monitoring**
-- **Recruiting calendar management**
-- **CARA log automation**
-- **APR tracking and predictions**
+**Short:**
+- Prevent a cross
+- Leave zone after ball is played
 
-### Alerts & Reminders
-- **Automatic deadline notifications**
-- **Rule change alerts**
-- **Potential violation warnings**
-- **Documentation requirements**
+**Zone:**
+- Attack the ball in your zone
+- Open body position
 
----
+**Markers / Fighters:**
+- Don't let your man across you
+- Make it difficult for him to jump
 
-## Module 7: Financial Intelligence
+**2nd Ball:** Prevent shots and take as much space forward as possible
 
-### Budget Management
-- **Real-time budget tracking**
-- **Expense categorization**
-- **Travel cost optimization**
-- **Equipment lifecycle management**
+**Marking Policy:**
+- Mark big for big
+- If outnumbered, leave smallest players farthest from goal open
 
-### NIL Intelligence
-- **Market value estimation** for players
-- **NIL deal tracking**
-- **Collective coordination** (where applicable)
-- **Compliance documentation**
-
-### Fundraising Support
-- **Donor relationship management**
-- **Campaign performance tracking**
-- **Grant opportunity identification**
-- **ROI analysis** for fundraising efforts
-
-### Resource Allocation
-- **Cost-benefit analysis** for program decisions
-- **Benchmarking** vs. peer programs
-- **Scenario modeling** for budget requests
+**Throw-in Policy:**
+- Big Mac for throws into box (3v2)
+- 11 Behind the ball, force them backwards, resume 0/1x Press
 
 ---
 
-## Module 8: Meeting & Communication Assistant
+## Game Moments
 
-### Meeting Intelligence
-- **Automated meeting scheduling**
-- **Agenda generation** based on priorities
-- **Meeting transcription** and notes
-- **Action item tracking**
-- **Follow-up reminders**
+### Attacking Zones
+| Zone | Name | Description |
+|------|------|-------------|
+| SGZ | Starting Game Zone | Build-up from back |
+| BGZ | Building Game Zone | Middle third progression |
+| FGZ | Finishing Game Zone | Final third attacking |
 
-### Communication Hub
-- **Team announcements** management
-- **Parent/family communication**
-- **Media relations** support
-- **Social media content suggestions**
+### Defending Transition Zones
+| Zone | Description |
+|------|-------------|
+| Low Loss | Lost possession in own third |
+| Mid Loss | Lost possession in middle third |
+| High Loss | Lost possession in attacking third |
 
-### Knowledge Management
-- **Searchable institutional knowledge**
-- **Historical decision tracking**
-- **Best practices documentation**
-- **Onboarding materials** for new staff
+### Defending Zones
+| Zone | Description |
+|------|-------------|
+| Low Zone | Defending in own third |
+| Mid Zone | Defending in middle third |
+| High Zone | Defending in attacking third |
 
----
+### Attacking Transition Zones
+| Zone | Description |
+|------|-------------|
+| Low Regain | Won ball in own third |
+| Mid Regain | Won ball in middle third |
+| High Regain | Won ball in attacking third |
 
-## Module 9: Unified Data Layer
-
-### Data Integration
-All program data flows into a single intelligent system:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    DATA SOURCES                              │
-├──────────────┬──────────────┬──────────────┬───────────────┤
-│ Match Video  │ GPS/Wearables│ Academic     │ Medical       │
-│ Training     │ InStat/Wyscout│ Financial   │ Recruiting    │
-│ Scheduling   │ Social Media │ Compliance   │ Travel        │
-└──────────────┴──────────────┴──────────────┴───────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              MARSHALL SOCCER AI ENGINE                       │
-│                                                              │
-│   • Natural Language Interface                               │
-│   • Cross-Domain Insights                                    │
-│   • Predictive Analytics                                     │
-│   • Automated Reporting                                      │
-│   • Decision Support                                         │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    OUTPUTS                                   │
-├──────────────┬──────────────┬──────────────┬───────────────┤
-│ Dashboards   │ Reports      │ Alerts       │ Recommendations│
-│ Visualizations│ Predictions │ Schedules    │ Insights       │
-└──────────────┴──────────────┴──────────────┴───────────────┘
-```
-
-### Natural Language Interface
-Staff can simply ask questions:
-
-> *"How did our pressing intensity compare in wins vs. losses this season?"*
-
-> *"Which recruits in the transfer portal fit our high-press style and have remaining eligibility?"*
-
-> *"What's our injury risk heading into the conference tournament?"*
-
-> *"Show me set piece conversion rates for our next three opponents."*
+### Set Pieces
+Detailed locations for corners, free kicks, penalties, throw-ins, and kickoffs - both attacking and defending.
 
 ---
 
-# Implementation Roadmap
+## Structural Organization
 
-## Phase 1: Foundation (Months 1-3)
-- Deploy match analysis pipeline
-- Integrate video processing infrastructure
-- Establish data collection protocols
-- Train staff on basic platform usage
+### Primary Formation: 4-5-1 / 4-3-3 Hybrid
 
-## Phase 2: Analysis Core (Months 4-6)
-- Launch player development profiles
-- Activate opponent intelligence
-- Implement training optimization
-- Begin recruitment analytics
+### 5 Channels
+1. **Wing Space** (Far side)
+2. **Half Space** (Between wing and center)
+3. **Central Channel** (Middle of pitch)
+4. **Half Space** (Between center and wing)
+5. **Wing Space** (Near side)
 
-## Phase 3: Operations Integration (Months 7-9)
-- Deploy compliance assistant
-- Integrate financial intelligence
-- Launch meeting assistant
-- Connect all data sources
+### Platforms
+- **Building Platform:** Deeper positions for possession build-up
+- **Attacking Platform:** Advanced positions for creating chances
 
-## Phase 4: Advanced Intelligence (Months 10-12)
-- Activate predictive models
-- Enable natural language interface
-- Implement advanced recommendations
-- Full platform optimization
+### Opponent Lines of Pressure
+- Against 1st Line
+- Against Mid Line
+- Against Back Line
 
----
+### Spaces of Attack / Positions
+- In Front of 1st Line Wide
+- In Front of 1st Line Central
+- Behind 1st Line Wide
+- Behind 1st Line Central
+- Behind Midline Wide
+- Behind Midline Central
+- Behind Backline Wide
+- Behind Backline Central
 
-# Competitive Advantage
+### Attacking Structures
 
-## What This Means for Marshall Soccer
+| Structure | Description |
+|-----------|-------------|
+| **Square** | Balanced 4-4 shape |
+| **W** | Wide attacking shape |
+| **M** | Compact midfield shape |
+| **Overload Right** | Numbers advantage on right |
+| **Overload Left** | Numbers advantage on left |
 
-### On the Pitch
-- **Better prepared** for every opponent
-- **Smarter in-game adjustments**
-- **Faster player development**
-- **Reduced injury risk**
-- **Data-driven tactical decisions**
-
-### In Recruiting
-- **Identify hidden gems** through video analysis
-- **Faster evaluation** of transfer portal options
-- **Better fit predictions** for program style
-- **Competitive intelligence** on recruiting battles
-
-### In Operations
-- **Time savings** for staff
-- **Reduced compliance risk**
-- **Better resource allocation**
-- **Institutional knowledge retention**
-- **Professional presentation** to recruits and donors
-
-### In the Conference
-- **Information advantage** over opponents
-- **First-mover advantage** in college soccer AI
-- **Reputation as innovative program**
-- **Attractive to tech-savvy recruits**
+### Pressing Structures
+- **0 Press:** Deep block, organized shape
+- **1x Press:** Trigger-based pressing
 
 ---
 
-# Technology We Bring
+## Adaptations to Opponent Systems
 
-| Capability | Status |
-|------------|--------|
-| Real-time player tracking | ✅ Built |
-| Ball tracking with 3D | ✅ Built |
-| Tactical analysis engine | ✅ Built |
-| Team classification | ✅ Built |
-| Jersey number recognition | ✅ Built |
-| Trajectory prediction | ✅ Built |
-| Graph neural networks | ✅ Built |
-| Training infrastructure | ✅ Built |
-| Web-based tools | ✅ Built |
-| Cloud integration | ✅ Built |
+### Rhythm Levels vs Back 4
 
-**Total: 26,000+ lines of production code ready for deployment**
+| Rhythm Level | Opponent Shape | Playing Style |
+|--------------|----------------|---------------|
+| 1 (Horizontal) | Low Block | Patient possession |
+| 2 (Horizontal) | 4-4-2 / 4-4-1-1 | Build through thirds |
+| 3 | 4-2-3-1 / 4-2-1-3 | Exploit gaps |
+| 4 (Vertical) | 4-1-4-1 / 4-1-3-2 / 4-3-3 | Direct play |
+| 5 (Vertical) | 1x M2M / M2M | Counter-attack focus |
 
----
+### Principles for Breaking Down Opponents
 
-# Investment Areas
+**Principle 1: Exploit Space THRU**
+- Central penetration through defensive lines
 
-## Technical Infrastructure
-- GPU compute for video processing
-- Cloud storage for video/data
-- API integrations (GPS, scheduling, etc.)
-- Mobile app development
+**Principle 2: Exploit Space AROUND**
+- Wide progression around defensive blocks
 
-## Data Acquisition
-- Historical match footage
-- Opponent video access
-- Wearable/GPS data feeds
-- Recruiting database access
-
-## Staff Training
-- Platform onboarding
-- Best practices development
-- Workflow integration
-- Ongoing support
+**Principle 3: Exploit Space OVER**
+- Long diagonal balls over defensive lines
 
 ---
 
-# Why Marshall? Why Now?
+## Dynamic Organization
 
-## The Opportunity
-- College soccer analytics is **underutilized** compared to other sports
-- Sun Belt programs are **not yet invested** in advanced technology
-- Transfer portal has made **rapid evaluation critical**
-- NIL has increased **need for player value assessment**
+### Defending 0 Press Formations
+Shape variations based on opponent:
+- 4-2-4 / 3-3-4
+- 4-3-3 / 3-4-3
+- 4-2-1-3 / 3-3-1-3
+- 4-2-2-2 / 3-2-2-3
+- 4-3-1-2 / 3-4-1-2
+- 4-3-2-1 / 3-4-2-1
 
-## The Timing
-- Technology is **mature and proven**
-- Infrastructure costs are **decreasing**
-- AI capabilities are **accelerating**
-- First-mover advantage is **available now**
-
-## The Partnership
-- We bring **working technology**, not promises
-- We understand **soccer-specific requirements**
-- We're committed to **continuous improvement**
-- We want Marshall to be our **flagship program**
+Each formation shows:
+- Central Push Thru option
+- Right/Full Tilt option
+- Long Defense shape
+- FB/Winger Exchange option
 
 ---
 
-# Summary
+## Actions to Get in Behind
 
-We're proposing a partnership that transforms Marshall Men's Soccer through:
+### Behind the Fullback Runs
 
-1. **Proven tracking technology** (26,000+ lines of working code)
-2. **Comprehensive AI platform** covering all program operations
-3. **Competitive advantage** in the Sun Belt and nationally
-4. **Staff empowerment** through intelligent automation
-5. **Player development** acceleration through data-driven insights
+| Run | Description | When | Who |
+|-----|-------------|------|-----|
+| **De Bruyne Run** | Diagonal run behind fullback | Late movement when ball arrives to player's foot | Anyone in half-space when ball is wide |
+| **Channel Run** | Run into channel behind FB | During push-pull movement | Ball-side ACM |
+| **Meshi Run** | Winger receives behind opposition winger | When player other than winger receives in wing space | Winger on ball-side |
+| **Alaba Run** | Winger accelerates behind FB on first touch | When ball traveling from CB to FB | Winger on ball-side |
+| **Post Run** | Run toward post when passing lane opens | When teammate facing forward with space/time | Wingers |
+| **Underlap** | FB runs inside the winger | During switch of play or long pass wide | FB on ball-side |
+| **Overlap** | FB runs outside the winger | When winger receives 1v1 with spatial advantage | FB on ball-side |
 
-This isn't about replacing coaching judgment—it's about **augmenting human expertise** with AI-powered intelligence. The best coaches will still win. We just want to make sure Marshall's coaches have every possible advantage.
+### Behind the Centerback Runs
+
+| Run | Description | When | Who |
+|-----|-------------|------|-----|
+| **Bell Run** | Run behind 1st CB when gap opens | When ball is "uncovered" at foot of teammate | Players in attacking platform (central channels) |
+| **Holmes Run** | Run behind ball-far CB | When winger dribbling horizontally | ACM on opposite side |
+| **Silva Run** | Run between CB and FB | When teammate dribbling horizontally/diagonally | Wingers |
+
+### Movements & Rotations
+
+| Movement | Description |
+|----------|-------------|
+| **Slant Pass** | Diagonal ball to break lines |
+| **Off the Shoulder** | Timing run behind defender |
+| **Face a Partner** | Open body to connect |
+| **Bounce and Go** | Give and go combination |
+| **Receive & Turn** | Collect and face forward |
+| **Pass to the Defender** | Draw pressure to release |
+| **Break Right/Left** | Sudden directional change |
+| **Push-Pull** | Create space through movement |
+| **Inverted** | Inside movement from wide |
+| **High Rollout** | GK distribution high |
+| **Low Rollout** | GK distribution low |
+| **Rollout** | GK distribution pattern |
+| **Horizontal Wall Pass** | Side-to-side combination |
+| **Vertical Wall Pass** | Forward combination |
 
 ---
 
-## Next Steps
+## Sub-Principles by Position
 
-1. **Technical demo** of tracking capabilities
-2. **Pilot program** for match analysis
-3. **Infrastructure assessment** for full deployment
-4. **Partnership structure** discussion
-5. **Timeline and resource planning**
+### Attacking Sub-Principles
+
+#### Center Backs
+*While marking the forward(s) while the team attacks:*
+
+| Principle | Description |
+|-----------|-------------|
+| **Progress the ball via dribbling** | When behind 1st line wide (Drive 2v1) |
+| **Find the free man** | As direct as possible and as indirect as necessary |
+| **Create space behind 1st line** | Through negative passing angles and provoking press |
+| **Progress ball behind midline and/or behind backline** | Vertical progression |
+| **Become passing option** | In front of 1st line, or behind 1st line wide |
 
 ---
 
-# Contact
+#### Fullbacks
+*Cover the half-space when we progress down opposite wing:*
 
-*[Contact information to be added]*
+| Principle | Description |
+|-----------|-------------|
+| **Play "off the shoulder" of winger** | When CB is free |
+| **Or "inside the shoulder"** | To open up winger behind midline |
+| **Find the free man** | As direct as possible and as indirect as necessary |
+| **Join the attack on switches of play** | Or ball-side wing when space is available |
+| **Progress ball behind midline and/or behind backline** | Vertical progression |
+| **Become a passing option** | In front of winger when CB is not free |
+| **Crossing** | Delivery into box |
+| **Counter-press / give safety option** | On ball-side |
 
 ---
 
-**Marshall Men's Soccer + AI = The Future of College Soccer**
+#### Pivot(s)
+*Protect space in front of CB's / Join the Back-line in emergency:*
 
-*"The goal is not to predict the game. The goal is to understand it better than anyone else."*
+| Principle | Description |
+|-----------|-------------|
+| **Make (bounce) passes to the free man** | With optimal body position (facing free man) |
+| **Become a passing option** | Underneath our strikers / 10's |
+| **Mirror the pressing actions of opponents 1st line** | Ensuring optimal body position to play forward ('surfing') |
+| **Pitch Position** | Between the opponents 1st and 2nd line. Body Position optimal for game situation |
+| **Progress ball behind midline and/or behind backline** | Vertical progression |
+| **Counter-press** | To regain the ball or force opponent backwards |
+
+---
+
+#### #10's (Attacking Midfielders)
+*Counter-press to regain the ball or force opponent backwards:*
+
+| Principle | Description |
+|-----------|-------------|
+| **Lay the ball off to the free man** | When appropriate |
+| **Become a passing option** | In the 10 holes / windows with ability to face forward |
+| **Mirror the pressing actions of opponents 2nd line** | Ensuring optimal body position to play forward ('surfing') |
+| **Pitch Position** | Between the opponents 2nd and last line, primarily in the half-spaces. Body position optimal for game situation |
+| **Exploit and/or create imbalances in the last line** | Create numerical/spatial advantages |
+| **Runs in Box & Shooting** | Goal threat |
+
+---
+
+#### Wingers
+*Counter-press to regain the ball or force opponent backwards:*
+
+| Principle | Description |
+|-----------|-------------|
+| **Exploit 1v1's or fix the defenders to exploit 2v1's** | Create advantages |
+| **Become a wide passing option** | When necessary |
+| **Give the team maximum width and depth** | 'Pinning' the opponents FB's |
+| **Exploit and/or create imbalances in the last line** | Create advantages |
+| **Attack the far post** | When we progress down the opposite wing |
+| **Crossing & Shooting** | End product |
+
+---
+
+#### Strikers
+*Counter-press to regain the ball or force opponent backwards:*
+
+| Principle | Description |
+|-----------|-------------|
+| **Lay the ball off to the free man** | When appropriate |
+| **Become a passing option behind the 2nd line** | When a window in the opp. midfield line appears (False 9) |
+| **Give the team maximum depth** | Pinning the opponent's CB's |
+| **Offer target play under high pressure** | From the opponent (True 9) |
+| **Make runs in behind, exploiting imbalances in the last line** | Depth runs |
+| **Runs in Box & Shooting** | Primary goal threat |
+
+---
+
+### Defending Sub-Principles
+
+#### Defending Philosophy (All Positions)
+*Based on position relative to ball:*
+
+| Position | Actions |
+|----------|---------|
+| **1v2 / Eliminated** | Cut off pass line to your man. Press ball carrier ASAP |
+| **-1 (Recovering)** | Make Return (to your man, or to your teammates man) |
+| **On Ball** | Prevent Forward Play, Don't Get Eliminated |
+| **Ball Near** | Close to your man (Tighten Goal-Side / Ball-Side Position), Defend Central Passing Lines |
+| **Ball Far** | Defend Depth (Read ball-carrier intention), Protect Middle & Keep Access to Your Man |
+
+**Exchange Policy:**
+- Give a man / Take a man
+- Stay with man if he tries to get free
+- Trade your man for a more dangerous man
+
+---
+
+#### Back Line (Defending)
+
+| Principle | Description |
+|-----------|-------------|
+| **Reduce the width of the line** | When a backline teammate jumps forward |
+| **Man-mark in the box** | Prioritizing players closest to the goal |
+| **Move the line up** | Following back passes or box clearances |
+| **Move the line back in anticipation of a long ball** | Form coverage around the aerial duel & play to a teammate |
+| **Stay close to our midfield line (depth)** | And keep the gaps between you tight (width) |
+
+---
+
+#### Center Backs (Defending)
+
+| Position | Actions |
+|----------|---------|
+| **1v2 / Eliminated** | Cover an eliminated Fullback by moving out to the wing, Rebalance the defensive line after elimination |
+| **-1 (Recovering)** | 1st CB: Defend back, 2nd CB: Track runs between CB's, CB's: adjust depth of line to game situation |
+| **On Ball** | Prevent Forward Play, Don't Get Eliminated |
+| **Ball Near** | Reduce space to the opponent giving support between the lines |
+| **Ball Far** | Maintain ball-side / goal-side position when ball on sides, Cover your CB / FB partner that is defending on-ball opponent |
+| **Long Ball** | Aerial Duels & Returning on long side balls and winning race on central balls |
+| **Low Block/Box** | Zonally defend 1st post / man-mark |
+
+---
+
+#### Fullbacks (Defending)
+
+| Position | Actions |
+|----------|---------|
+| **1v2 / Eliminated** | Identify correct responsibility in 3 situations, Rebalance the defensive line when the CB moves out to the wing |
+| **-1 (Recovering)** | Track runs behind 2nd CB |
+| **On Ball** | Prevent Forward Play, Don't Get Eliminated |
+| **Ball Near** | Reduce space to the winger, Avoid inside passes between you and the CB |
+| **Ball Far** | Shift over to support ball-far CB |
+| **Long Ball** | Aerial Duels & Covering CB partner challenging for ball in air |
+| **Low Block/Box** | Guide attacker towards wings to deny cross / man-mark |
+
+---
+
+#### Center Mids (Defending)
+
+| Position | Actions |
+|----------|---------|
+| **1v2 / Eliminated** | Cut off pass line to your man. Press ball carrier ASAP |
+| **-1 (Recovering)** | Rebalance the defensive line when your CB moves out to the wing |
+| **On Ball** | Prevent Forward Play, Don't Get Eliminated |
+| **Ball Near** | Track the opponents CM's |
+| **Ball Far** | Protect space in front of CB's when ball on sides, Avoid passes that break our midfield line centrally |
+| **Long Ball** | Aerial Duels & winning the race to secure 2nd balls |
+| **Low Block/Box** | Man-mark runners from 2nd line / defend half-space in box / cutbacks |
+| **Track runs from the 2nd line in behind our last line** | Cover late runners |
+
+---
+
+#### Wingers (Defending)
+
+| Position | Actions |
+|----------|---------|
+| **1v2 / Eliminated** | Cut off pass line to your man. Press ball carrier ASAP |
+| **-1 (Recovering)** | Make return |
+| **On Ball** | Prevent Forward Play, Don't Get Eliminated |
+| **Ball Near** | Tracking the FB when they rotate / join attack to always be between them and goal, High pressure on passes to the fullbacks (in to out) |
+| **Ball Far** | Give defensive balance by remaining located behind the ball, Give defensive balance by prioritizing central channel, but staying aware of opponent FB |
+| **Long Ball** | Win race to secure 2nd balls |
+| **Low Block/Box** | Block inside when FB is 1v1, Support box defense from opposite wing |
+
+---
+
+#### Strikers (Defending)
+
+| Position | Actions |
+|----------|---------|
+| **1v2 / Eliminated** | Cut off pass line to your man. Press ball carrier ASAP |
+| **-1 (Recovering)** | Make return |
+| **On Ball** | Prevent Forward Play, Don't Get Eliminated, High pressure on passes to the opponents CB's |
+| **Ball Near** | Blocking the HM area to guide opponent towards the wings |
+| **Ball Far** | Block switches of play when ball on sides, Defend backwards at 100% following passes into the opponents HM area |
+| **Long Ball** | Win race to secure 2nd balls |
+| **Low Block/Box** | Drop 1-line to defend the opponents midfield line |
+
+---
+
+## AI Platform Integration with Game Model
+
+The AI system measures and analyzes performance against every aspect of the Game Model:
+
+### Tactical Analysis Capabilities
+
+| Game Model Component | AI Analysis Feature |
+|---------------------|---------------------|
+| **Attacking Philosophy** | Possession penetration metrics, +1 detection, rhythm analysis |
+| **Defending Philosophy** | Elimination tracking, ball-side/goal-side positioning scores |
+| **Transition Moments** | Counter-press success rate, transition speed metrics |
+| **Structural Organization** | Formation shape analysis, channel occupation rates |
+| **Dynamic Organization** | Press trigger detection, shape transformation tracking |
+| **Actions to Get in Behind** | Run detection and classification (De Bruyne, Channel, Bell, etc.) |
+| **Position Sub-Principles** | Individual compliance scoring per position |
+
+### Performance Dashboards
+
+The platform provides real-time and post-match dashboards for:
+- Team adherence to Game Model principles
+- Individual player performance against position-specific sub-principles
+- Opponent analysis mapped to adaptation strategies
+- Training session design based on Game Model gaps
+
+---
+
+## Summary
+
+Marshall Men's Soccer Game Model 2.0 represents a comprehensive approach to positional possession football. The AI platform transforms this tactical framework into measurable, actionable intelligence by:
+
+1. **Automating Analysis** - Every match analyzed against Game Model principles
+2. **Quantifying Performance** - Objective metrics for subjective tactical concepts
+3. **Accelerating Development** - Individual feedback tied to position-specific sub-principles
+4. **Optimizing Preparation** - Opponent scouting mapped to adaptation strategies
+5. **Enabling Communication** - Shared language between staff, players, and data
+
+**"The goal is to make this the best TEAM you'll ever play for."**

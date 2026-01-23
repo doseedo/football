@@ -160,11 +160,15 @@ class GameStateEvaluator:
         self.optimal_shooting_distance = optimal_shooting_distance
         self.density_radius = density_radius
 
-    def evaluate(self, state: GameState) -> GameState:
+    def evaluate(self, state: GameState, depth: int = 0) -> GameState:
         """
         Fully evaluate a game state.
 
         Populates elimination state, score, and available actions.
+
+        Args:
+            state: The game state to evaluate
+            depth: Recursion depth (used to prevent infinite recursion in action evaluation)
         """
         # 1. Calculate eliminations
         state.elimination_state = self.elimination_calc.calculate(
@@ -179,7 +183,12 @@ class GameStateEvaluator:
         angle_score = self._score_angle(state)
         density_score = self._score_density(state)
         compactness_score = self._score_compactness(state)
-        action_score = self._score_actions(state)
+
+        # Only score actions at depth 0 to prevent infinite recursion
+        if depth == 0:
+            action_score = self._score_actions(state)
+        else:
+            action_score = 0.5  # Default neutral score for hypothetical states
 
         state.score = StateScore(
             elimination_score=elimination_score,
@@ -190,8 +199,11 @@ class GameStateEvaluator:
             action_score=action_score,
         )
 
-        # 3. Find available actions
-        state.available_actions = self._find_actions(state)
+        # 3. Find available actions (only at depth 0)
+        if depth == 0:
+            state.available_actions = self._find_actions(state)
+        else:
+            state.available_actions = []
 
         return state
 
@@ -457,7 +469,7 @@ class GameStateEvaluator:
             attackers=state.attackers,
             defenders=state.defenders,
         )
-        hypothetical_evaluated = self.evaluate(hypothetical_state)
+        hypothetical_evaluated = self.evaluate(hypothetical_state, depth=1)
         value_if_success = hypothetical_evaluated.score.total * value_multiplier
 
         # Risk if intercepted

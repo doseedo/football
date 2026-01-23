@@ -68,10 +68,10 @@ class Player:
         """
         # Vector to target
         to_target = np.array([
-            target.x - self.position.x,
-            target.y - self.position.y
-        ])
-        distance = np.linalg.norm(to_target)
+            float(target.x - self.position.x),
+            float(target.y - self.position.y)
+        ], dtype=np.float64)
+        distance = float(np.linalg.norm(to_target))
 
         if distance < 0.1:
             return 0.0
@@ -313,8 +313,8 @@ class EliminationCalculator:
         ball-to-goal line that the defender can reach.
         """
         # Line from ball to goal
-        line_vec = np.array([goal_pos.x - ball_pos.x, goal_pos.y - ball_pos.y])
-        line_len = np.linalg.norm(line_vec)
+        line_vec = np.array([float(goal_pos.x - ball_pos.x), float(goal_pos.y - ball_pos.y)], dtype=np.float64)
+        line_len = float(np.linalg.norm(line_vec))
 
         if line_len < 0.1:
             return ball_pos
@@ -323,9 +323,9 @@ class EliminationCalculator:
 
         # Vector from ball to defender
         to_defender = np.array([
-            defender_pos.x - ball_pos.x,
-            defender_pos.y - ball_pos.y
-        ])
+            float(defender_pos.x - ball_pos.x),
+            float(defender_pos.y - ball_pos.y)
+        ], dtype=np.float64)
 
         # Project defender position onto line
         projection = np.dot(to_defender, line_unit)

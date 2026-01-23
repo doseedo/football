@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Player Tracker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #16213e;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 1.2em; color: #00d9ff; }
+        .main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        .sidebar {
+            width: 250px;
+            background: #16213e;
+            padding: 15px;
+            overflow-y: auto;
+        }
+        .video-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+        }
+        .frame-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+            border-radius: 8px;
+        }
+        #frame-img {
+            max-width: 100%;
+            max-height: 100%;
+            cursor: crosshair;
+        }
+        .controls {
+            padding: 10px 0;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            background: #0f3460;
+            color: #fff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover { background: #1a4a7a; }
+        button.selected { background: #00d9ff; color: #000; }
+        input[type="range"] { flex: 1; }
+        .section { margin-bottom: 15px; }
+        .section h3 { font-size: 0.85em; color: #888; margin-bottom: 8px; }
+        .video-item {
+            padding: 8px;
+            background: #1a1a2e;
+            border-radius: 4px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        .video-item:hover { background: #0f3460; }
+        .video-item.active { background: #0f3460; border-left: 3px solid #00d9ff; }
+        .player-item {
+            padding: 6px 8px;
+            background: #1a1a2e;
+            border-radius: 4px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            display: flex;
+            justify-content: space-between;
+        }
+        .player-item:hover { background: #0f3460; }
+        .player-item.selected { background: #00d9ff; color: #000; }
+        .info { font-size: 0.85em; color: #888; }
+        #status { margin-left: 10px; color: #888; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Player Tracker</h1>
+        <div>
+            <button onclick="refresh()">Refresh Detection</button>
+            <button onclick="exportCSV()">Export CSV</button>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="sidebar">
+            <div class="section">
+                <h3>VIDEOS</h3>
+                <div id="video-list"></div>
+            </div>
+
+            <div class="section">
+                <h3>PLAYERS IN FRAME</h3>
+                <div id="player-list"></div>
+                <button onclick="deselect()" style="width:100%; margin-top:8px;">
+                    Deselect (Esc)
+                </button>
+                <button onclick="deleteSelected()" style="width:100%; margin-top:5px; background:#c0392b;">
+                    Delete Selected (D)
+                </button>
+                <button onclick="toggleAddMode()" id="add-btn" style="width:100%; margin-top:5px;">
+                    + Add Player Mode
+                </button>
+                <div id="add-status" style="font-size:0.8em; color:#00d9ff; margin-top:5px;"></div>
+            </div>
+
+            <div class="section">
+                <h3>INFO</h3>
+                <div class="info" id="info">No video loaded</div>
+            </div>
+        </div>
+
+        <div class="video-area">
+            <div class="frame-container">
+                <img id="frame-img" onclick="handleClick(event)">
+            </div>
+            <div class="controls">
+                <button onclick="prev()">&#9664; Prev</button>
+                <button onclick="togglePlay()" id="play-btn">Play</button>
+                <button onclick="next()">Next &#9654;</button>
+                <input type="range" id="slider" min="0" max="100" value="0"
+                       oninput="seek(this.value)">
+                <span id="status">Frame 0</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let frame = 0, total = 0, fps = 30, playing = false, interval = null;
+        let video = null, selected = null;
+        let addMode = false;
+
+        async function loadVideos() {
+            const r = await fetch('/api/videos');
+            const d = await r.json();
+            const el = document.getElementById('video-list');
+            el.innerHTML = '';
+            d.videos.forEach(v => {
+                const div = document.createElement('div');
+                div.className = 'video-item';
+                div.textContent = v.name;
+                div.onclick = () => selectVideo(v.name);
+                el.appendChild(div);
+            });
+        }
+
+        async function selectVideo(name) {
+            video = name;
+            document.querySelectorAll('.video-item').forEach(el => {
+                el.classList.toggle('active', el.textContent === name);
+            });
+
+            const r = await fetch(`/api/video/${encodeURIComponent(name)}/load`, {method:'POST'});
+            const d = await r.json();
+            total = d.frame_count;
+            fps = d.fps || 30;
+
+            document.getElementById('slider').max = total - 1;
+            document.getElementById('info').innerHTML =
+                `${d.width}x${d.height}<br>${total} frames @ ${fps.toFixed(1)} fps`;
+
+            frame = 0;
+            loadFrame(0);
+        }
+
+        async function loadFrame(n) {
+            // Pass previous frame for optical flow tracking of manual players
+            const url = frame !== n ? `/api/frame/${n}?prev=${frame}` : `/api/frame/${n}`;
+            const r = await fetch(url);
+            const d = await r.json();
+
+            document.getElementById('frame-img').src = d.image;
+            document.getElementById('slider').value = n;
+            document.getElementById('status').textContent = `Frame ${n}/${total}`;
+
+            selected = d.selected;
+            updatePlayers(d.players);
+            frame = n;
+        }
+
+        function updatePlayers(players) {
+            const el = document.getElementById('player-list');
+            el.innerHTML = '';
+            players.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'player-item' + (p.id === selected ? ' selected' : '');
+                div.innerHTML = `<span>#${p.id}</span><span>${Math.round(p.confidence*100)}%</span>`;
+                div.onclick = () => selectPlayer(p.id);
+                el.appendChild(div);
+            });
+        }
+
+        async function handleClick(e) {
+            const img = e.target;
+            const rect = img.getBoundingClientRect();
+            const x = (e.clientX - rect.left) * (img.naturalWidth / rect.width);
+            const y = (e.clientY - rect.top) * (img.naturalHeight / rect.height);
+
+            if (addMode) {
+                // Find and select nearest YOLO detection
+                const r = await fetch('/api/add', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({frame, x, y})
+                });
+                const d = await r.json();
+                if (d.added) {
+                    document.getElementById('add-status').textContent = `Selected #${d.added.id} (YOLO)`;
+                } else {
+                    document.getElementById('add-status').textContent = d.error || 'No player found';
+                }
+            } else {
+                // Select existing player
+                await fetch('/api/click', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({frame, x, y})
+                });
+            }
+            loadFrame(frame);
+        }
+
+        function toggleAddMode() {
+            addMode = !addMode;
+            const btn = document.getElementById('add-btn');
+            const status = document.getElementById('add-status');
+            if (addMode) {
+                btn.textContent = 'Cancel Add Mode';
+                btn.style.background = '#00d9ff';
+                btn.style.color = '#000';
+                status.textContent = 'Click on frame to add player';
+                document.getElementById('frame-img').style.cursor = 'cell';
+            } else {
+                btn.textContent = '+ Add Player Mode';
+                btn.style.background = '';
+                btn.style.color = '';
+                status.textContent = '';
+                document.getElementById('frame-img').style.cursor = 'crosshair';
+            }
+        }
+
+        async function selectPlayer(id) {
+            await fetch(`/api/select/${id}`, {method:'POST'});
+            loadFrame(frame);
+        }
+
+        async function deselect() {
+            await fetch('/api/deselect', {method:'POST'});
+            loadFrame(frame);
+        }
+
+        function prev() { if (frame > 0) loadFrame(frame - 1); }
+        function next() { if (frame < total - 1) loadFrame(frame + 1); }
+        function seek(n) { loadFrame(parseInt(n)); }
+
+        function togglePlay() {
+            playing = !playing;
+            document.getElementById('play-btn').textContent = playing ? 'Pause' : 'Play';
+            if (playing) {
+                interval = setInterval(() => {
+                    if (frame < total - 1) loadFrame(frame + 1);
+                    else togglePlay();
+                }, 1000 / fps);
+            } else {
+                clearInterval(interval);
+            }
+        }
+
+        async function refresh() {
+            await fetch('/api/refresh', {method:'POST'});
+            loadFrame(frame);
+        }
+
+        async function exportCSV() {
+            const r = await fetch('/api/export/csv', {method:'POST'});
+            const d = await r.json();
+            alert(d.filename ? `Saved: ${d.path}` : 'Error: ' + d.error);
+        }
+
+        async function deleteSelected() {
+            if (selected === null) {
+                alert('No player selected. Click a player first, then press D to delete.');
+                return;
+            }
+            const r = await fetch('/api/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({player_id: selected})
+            });
+            const d = await r.json();
+            if (d.deleted) {
+                console.log(`Deleted player #${d.deleted} from ${d.frames.length} frames`);
+            }
+            loadFrame(frame);
+        }
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'ArrowLeft') prev();
+            if (e.key === 'ArrowRight') next();
+            if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+            if (e.key === 'Escape') { deselect(); if(addMode) toggleAddMode(); }
+            if (e.key === 'a' || e.key === 'A') toggleAddMode();
+            if (e.key === 'd' || e.key === 'D') deleteSelected();
+        });
+
+        loadVideos();
+    </script>
+</body>
+</html>

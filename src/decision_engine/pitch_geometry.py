@@ -43,7 +43,7 @@ class Position:
     y: float
 
     def to_array(self) -> np.ndarray:
-        return np.array([self.x, self.y])
+        return np.array([self.x, self.y], dtype=np.float64)
 
     @classmethod
     def from_array(cls, arr: np.ndarray) -> "Position":
@@ -81,7 +81,7 @@ class Velocity:
         return np.arctan2(self.vy, self.vx)
 
     def to_array(self) -> np.ndarray:
-        return np.array([self.vx, self.vy])
+        return np.array([self.vx, self.vy], dtype=np.float64)
 
     @classmethod
     def from_array(cls, arr: np.ndarray) -> "Velocity":

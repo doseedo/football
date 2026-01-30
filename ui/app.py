@@ -872,46 +872,98 @@ def get_weak_side(ball_y):
 
 
 def calculate_xg(x, y):
-    """Calculate expected goals at a position.
+    """Calculate expected goals at a position using real xG zone data.
 
-    Simple model based on distance and angle to goal.
-    Goal is at x=60 (right side).
+    Based on statistical xG model zone map.
+    Goal is at x=60 (right side), pitch center at y=0.
+
+    Grid: 9 columns (width) × 18 rows (length of half)
+    Each zone is approximately 8.3 yards wide × 3.3 yards deep
     """
-    goal_x = 60
-    goal_y = 0
+    # xG zone data from statistical model
+    # Rows from goal line (row 0) to halfway line (row 17)
+    # Columns from left touchline (col 0) to right touchline (col 8)
+    # Center of pitch is columns 3,4,5
+    XG_ZONES = [
+        # Row 0: Inside 6-yard box (x = 57-60)
+        [0.000, 0.016, 0.045, 0.147, 0.438, 0.169, 0.049, 0.026, 0.011],
+        # Row 1: 6-yard box edge (x = 54-57)
+        [0.010, 0.021, 0.048, 0.111, 0.173, 0.112, 0.050, 0.022, 0.020],
+        # Row 2: Inside penalty box (x = 50-54)
+        [0.006, 0.022, 0.040, 0.081, 0.187, 0.083, 0.041, 0.016, 0.016],
+        # Row 3: Penalty box (x = 47-50)
+        [0.000, 0.017, 0.027, 0.039, 0.054, 0.039, 0.028, 0.014, 0.011],
+        # Row 4: Edge of penalty box (x = 43-47)
+        [0.009, 0.014, 0.021, 0.028, 0.029, 0.027, 0.022, 0.014, 0.011],
+        # Row 5: Just outside box (x = 40-43)
+        [0.010, 0.015, 0.016, 0.020, 0.020, 0.020, 0.016, 0.010, 0.000],
+        # Row 6: (x = 36-40)
+        [0.008, 0.014, 0.014, 0.014, 0.013, 0.017, 0.013, 0.011, 0.004],
+        # Row 7: (x = 33-36)
+        [0.007, 0.008, 0.009, 0.004, 0.008, 0.009, 0.002, 0.009, 0.006],
+        # Row 8: (x = 29-33)
+        [0.000, 0.007, 0.007, 0.007, 0.007, 0.005, 0.008, 0.000, 0.006],
+        # Row 9: (x = 26-29)
+        [0.000, 0.000, 0.012, 0.000, 0.005, 0.006, 0.000, 0.003, 0.000],
+        # Row 10: (x = 22-26)
+        [0.000, 0.000, 0.005, 0.005, 0.006, 0.005, 0.000, 0.000, 0.000],
+        # Row 11: (x = 19-22)
+        [0.000, 0.006, 0.000, 0.004, 0.005, 0.004, 0.003, 0.000, 0.000],
+        # Row 12: (x = 15-19)
+        [0.000, 0.003, 0.003, 0.000, 0.000, 0.000, 0.003, 0.000, 0.000],
+        # Row 13: (x = 11-15)
+        [0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+        # Row 14: (x = 8-11)
+        [0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+        # Row 15: (x = 4-8)
+        [0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+        # Row 16: (x = 0-4)
+        [0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+        # Row 17: Halfway line and beyond
+        [0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+    ]
 
-    # Distance to goal center
-    dist = calculate_distance(x, y, goal_x, goal_y)
+    # Pitch dimensions
+    HALF_LENGTH = 60  # yards from center to goal
+    HALF_WIDTH = 37.5  # yards from center to touchline
 
-    # Angle to goal (narrower = harder)
-    goal_width = 8  # yards
-    angle = math.atan2(goal_width/2, dist) * 2  # Angle in radians
+    # If in defensive half, xG is essentially 0
+    if x <= 0:
+        return 0.001
 
-    # Base xG from distance (exponential decay)
-    if dist <= 6:
-        base_xg = 0.35  # Very close
-    elif dist <= 12:
-        base_xg = 0.25
-    elif dist <= 18:
-        base_xg = 0.12
-    elif dist <= 25:
-        base_xg = 0.06
-    elif dist <= 35:
-        base_xg = 0.03
-    else:
-        base_xg = 0.01
+    # Map position to grid indices
+    # x: 0 to 60 maps to rows 17 down to 0
+    # y: -37.5 to +37.5 maps to columns 0 to 8
 
-    # Angle modifier (central = better)
-    angle_factor = math.cos(math.atan2(abs(y), max(1, goal_x - x)))
+    # Row index (0 = closest to goal, 17 = halfway line)
+    row_float = (HALF_LENGTH - x) / HALF_LENGTH * 17
+    row_float = max(0, min(17, row_float))
 
-    # Combine
-    xg = base_xg * (0.5 + 0.5 * angle_factor)
+    # Column index (0 = left, 8 = right, 4 = center)
+    col_float = (y + HALF_WIDTH) / (2 * HALF_WIDTH) * 8
+    col_float = max(0, min(8, col_float))
 
-    # Bonus for being inside the box
-    if x > 42 and abs(y) < 22:
-        xg *= 1.3
+    # Get integer indices for bilinear interpolation
+    row_low = int(row_float)
+    row_high = min(row_low + 1, 17)
+    col_low = int(col_float)
+    col_high = min(col_low + 1, 8)
 
-    return min(0.95, max(0.001, xg))
+    # Interpolation weights
+    row_frac = row_float - row_low
+    col_frac = col_float - col_low
+
+    # Bilinear interpolation
+    xg_ll = XG_ZONES[row_low][col_low]
+    xg_lh = XG_ZONES[row_low][col_high]
+    xg_hl = XG_ZONES[row_high][col_low]
+    xg_hh = XG_ZONES[row_high][col_high]
+
+    xg_low = xg_ll * (1 - col_frac) + xg_lh * col_frac
+    xg_high = xg_hl * (1 - col_frac) + xg_hh * col_frac
+    xg = xg_low * (1 - row_frac) + xg_high * row_frac
+
+    return max(0.001, xg)
 
 
 def find_gaps():

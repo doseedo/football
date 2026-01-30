@@ -391,8 +391,8 @@
                     <span class="stat-value" id="currentXg">-</span>
                 </div>
                 <div class="stat-row">
-                    <span class="stat-label">Chain EV</span>
-                    <span class="stat-value positive" id="currentEv" title="Probability of scoring considering all options">-</span>
+                    <span class="stat-label">xG</span>
+                    <span class="stat-value positive" id="currentEv" title="xG considering all options (pass chains, shots, dribbles)">-</span>
                 </div>
                 <div class="stat-row">
                     <span class="stat-label">Total Options</span>
@@ -714,7 +714,7 @@
                     if (opt.is_in_behind) badges += '<span style="background:#f59e0b;color:#000;padding:1px 4px;border-radius:3px;font-size:0.7rem;margin-left:4px;">IN BEHIND</span>';
                     if (opt.in_overload) badges += '<span style="background:#10b981;color:#fff;padding:1px 4px;border-radius:3px;font-size:0.7rem;margin-left:4px;">OVERLOAD</span>';
                 } else if (opt.action === 'shoot') {
-                    extraInfo = `<span>Block: ${(opt.intercept_prob * 100).toFixed(0)}%</span>`;
+                    extraInfo = opt.blocked ? `<span style="color:#f87171;">BLOCKED</span>` : `<span style="color:#4ade80;">CLEAR</span>`;
                 }
 
                 optionsHtml += `
@@ -724,10 +724,10 @@
                             <span class="option-rec ${opt.recommendation}">${opt.recommendation}</span>
                         </div>
                         <div class="option-stats">
-                            <span>Success: ${(opt.success_prob * 100).toFixed(0)}%</span>
-                            <span>${opt.action === 'shoot' ? 'xG' : 'Target EV'}: ${opt.action === 'shoot' ? (opt.xg_target * 100).toFixed(1) + '%' : (opt.target_position_value * 100).toFixed(1) + '%'}</span>
+                            <span>${opt.action === 'shoot' ? 'xG' : 'Target xG'}: ${opt.action === 'shoot' ? (opt.xg_target * 100).toFixed(1) + '%' : ((opt.target_position_value || 0) * 100).toFixed(1) + '%'}</span>
                             ${extraInfo}
-                            <span>Chain EV: ${(opt.ev * 100).toFixed(1)}%</span>
+                            <span>xG: ${(opt.ev * 100).toFixed(1)}%</span>
+                            <span>Chain: ${opt.chain_length || 1} plays</span>
                         </div>
                     </div>
                 `;
@@ -740,6 +740,21 @@
                 const currentEv = analysis.chain_ev ? analysis.chain_ev.current_position_ev : 0;
                 const evGain = opt.ev - currentEv;
                 document.getElementById('bestOptionPanel').style.display = 'block';
+                // Format chain visualization
+                let chainText = '';
+                if (opt.chain && opt.chain.length > 0) {
+                    chainText = opt.chain.map((step, i) => {
+                        if (step.action === 'pass' || step.action === 'through_ball') {
+                            return `#${step.player_id}`;
+                        } else if (step.action === 'shoot') {
+                            return `SHOOT (${(step.xg * 100).toFixed(0)}%)`;
+                        } else if (step.action === 'dribble') {
+                            return 'DRIBBLE';
+                        }
+                        return step.action;
+                    }).join(' → ');
+                }
+
                 document.getElementById('bestOptionContent').innerHTML = `
                     <div class="stat-row">
                         <span class="stat-label">Action</span>
@@ -751,24 +766,22 @@
                         <span class="stat-value">Player #${opt.target_player}</span>
                     </div>
                     ` : ''}
-                    <div class="stat-row">
-                        <span class="stat-label">Pass/Shot Success</span>
-                        <span class="stat-value">${(opt.success_prob * 100).toFixed(0)}%</span>
-                    </div>
                     ${opt.target_position_value ? `
                     <div class="stat-row">
-                        <span class="stat-label">Target Position EV</span>
+                        <span class="stat-label">Target xG</span>
                         <span class="stat-value">${(opt.target_position_value * 100).toFixed(1)}%</span>
                     </div>
                     ` : ''}
                     <div class="stat-row">
-                        <span class="stat-label">Chain EV</span>
+                        <span class="stat-label">xG</span>
                         <span class="stat-value positive">${(opt.ev * 100).toFixed(1)}%</span>
                     </div>
-                    <div class="stat-row">
-                        <span class="stat-label">EV vs Hold</span>
-                        <span class="stat-value ${evGain >= 0 ? 'positive' : 'negative'}">${evGain >= 0 ? '+' : ''}${(evGain * 100).toFixed(1)}%</span>
+                    ${chainText ? `
+                    <div class="stat-row" style="flex-direction:column;">
+                        <span class="stat-label" style="margin-bottom:5px;">Best Sequence</span>
+                        <span class="stat-value" style="font-size:0.85rem;color:#00d4ff;">Ball → ${chainText}</span>
                     </div>
+                    ` : ''}
                 `;
             } else {
                 document.getElementById('bestOptionPanel').style.display = 'none';
@@ -1063,7 +1076,7 @@
                 ctx.fillStyle = color;
                 ctx.font = 'bold 14px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(`SHOOT xG: ${(opt.success_prob * 100).toFixed(0)}%`, (from.x + to.x) / 2, (from.y + to.y) / 2 - 15);
+                ctx.fillText(`SHOOT xG: ${(opt.xg_target * 100).toFixed(0)}%`, (from.x + to.x) / 2, (from.y + to.y) / 2 - 15);
             }
             // For dribbling, draw dashed path
             else if (opt.action === 'dribble') {
@@ -1088,7 +1101,7 @@
                 ctx.fillStyle = color;
                 ctx.font = 'bold 12px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(`DRIBBLE ${(opt.success_prob * 100).toFixed(0)}%`, (from.x + to.x) / 2, (from.y + to.y) / 2 - 10);
+                ctx.fillText(`DRIBBLE → xG: ${(opt.ev * 100).toFixed(0)}%`, (from.x + to.x) / 2, (from.y + to.y) / 2 - 10);
             }
             // Standard pass/through ball
             else {
@@ -1117,7 +1130,7 @@
                 ctx.font = 'bold 12px sans-serif';
                 ctx.textAlign = 'center';
                 const actionLabel = opt.action === 'through_ball' ? 'THRU' : 'PASS';
-                ctx.fillText(`${actionLabel} ${(opt.success_prob * 100).toFixed(0)}%`, mid.x, mid.y - 10);
+                ctx.fillText(`${actionLabel} → xG: ${(opt.ev * 100).toFixed(0)}%`, mid.x, mid.y - 10);
             }
         }
 

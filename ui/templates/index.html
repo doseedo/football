@@ -403,6 +403,31 @@
                 </div>
             </div>
 
+            <div class="panel-section" id="tacticalPanel" style="display: none;">
+                <h3>Tactical Analysis</h3>
+                <div class="stat-row">
+                    <span class="stat-label">Pressure</span>
+                    <span class="stat-value" id="pressureLevel">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Weak Side</span>
+                    <span class="stat-value" id="weakSide">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Overloads</span>
+                    <span class="stat-value" id="overloadCount">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Switches</span>
+                    <span class="stat-value" id="switchCount">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Through Balls</span>
+                    <span class="stat-value" id="throughBallCount">-</span>
+                </div>
+                <div id="tacticalAdvice" style="margin-top: 10px; padding: 10px; background: #222; border-radius: 5px; border-left: 3px solid #00d4ff; font-size: 0.9rem;"></div>
+            </div>
+
             <div class="panel-section best-option" id="bestOptionPanel" style="display: none;">
                 <h3>Recommended Action</h3>
                 <div id="bestOptionContent"></div>
@@ -577,7 +602,27 @@
                 document.getElementById('gapsList').innerHTML = '<div class="loading">Click "Analyze" to detect gaps</div>';
                 document.getElementById('optionsList').innerHTML = '<div class="loading">Click "Analyze" to see options</div>';
                 document.getElementById('bestOptionPanel').style.display = 'none';
+                document.getElementById('tacticalPanel').style.display = 'none';
                 return;
+            }
+
+            // Tactical Analysis Panel (NEW - Football Realism)
+            if (analysis.tactical) {
+                document.getElementById('tacticalPanel').style.display = 'block';
+                const t = analysis.tactical;
+
+                // Pressure with color coding
+                const pressureEl = document.getElementById('pressureLevel');
+                pressureEl.textContent = t.pressure_level;
+                pressureEl.className = 'stat-value ' + (t.pressure_level === 'HIGH' ? 'negative' : t.pressure_level === 'MEDIUM' ? 'neutral' : 'positive');
+
+                document.getElementById('weakSide').textContent = t.weak_side.toUpperCase();
+                document.getElementById('overloadCount').textContent = t.overloads.length > 0 ?
+                    t.overloads.map(o => `${o.attackers}v${o.defenders}`).join(', ') : 'None';
+                document.getElementById('switchCount').textContent = t.switches_available;
+                document.getElementById('throughBallCount').textContent = t.through_balls_available;
+
+                document.getElementById('tacticalAdvice').innerHTML = `<strong>Advice:</strong> ${t.advice}`;
             }
 
             document.getElementById('totalOptions').textContent = analysis.total_options;
@@ -627,11 +672,17 @@
 
                 // Extra info for passes
                 let extraInfo = '';
-                if (opt.action === 'pass' && opt.receiver_pressure !== undefined) {
+                let badges = '';
+                if (opt.action === 'pass' || opt.action === 'through_ball') {
                     const pressureLabel = opt.receiver_pressure > 0.6 ? 'HIGH' :
                                           opt.receiver_pressure > 0.3 ? 'MED' : 'LOW';
                     const facingLabel = opt.receiver_facing_goal ? '→' : '←';
                     extraInfo = `<span>Pressure: ${pressureLabel} ${facingLabel}</span>`;
+
+                    // Add badges for special plays
+                    if (opt.is_switch) badges += '<span style="background:#9333ea;color:#fff;padding:1px 4px;border-radius:3px;font-size:0.7rem;margin-left:4px;">SWITCH</span>';
+                    if (opt.is_in_behind) badges += '<span style="background:#f59e0b;color:#000;padding:1px 4px;border-radius:3px;font-size:0.7rem;margin-left:4px;">IN BEHIND</span>';
+                    if (opt.in_overload) badges += '<span style="background:#10b981;color:#fff;padding:1px 4px;border-radius:3px;font-size:0.7rem;margin-left:4px;">OVERLOAD</span>';
                 } else if (opt.action === 'shoot') {
                     extraInfo = `<span>Block: ${(opt.intercept_prob * 100).toFixed(0)}%</span>`;
                 }
@@ -639,7 +690,7 @@
                 optionsHtml += `
                     <div class="option-item ${isBest ? 'best' : ''}" onclick="highlightOption(${i})">
                         <div class="option-header">
-                            <span class="option-type">${actionLabel}</span>
+                            <span class="option-type">${actionLabel}${badges}</span>
                             <span class="option-rec ${opt.recommendation}">${opt.recommendation}</span>
                         </div>
                         <div class="option-stats">

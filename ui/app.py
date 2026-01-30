@@ -55,6 +55,12 @@ ACCELERATION_TIME = 1.8  # seconds to cover acceleration distance
 TOP_SPEED = meters_to_yards(8.33)  # ~9.1 yards/s (8.33 m/s top speed)
 REACTION_TIME = 0.3  # seconds before defender reacts
 
+# Dribbling physics (50% of sprint speed, proportional acceleration)
+DRIBBLE_SPEED_RATIO = 0.5
+DRIBBLE_TOP_SPEED = TOP_SPEED * DRIBBLE_SPEED_RATIO  # ~4.55 yards/s
+DRIBBLE_ACCEL_DISTANCE = ACCELERATION_DISTANCE * DRIBBLE_SPEED_RATIO  # ~5.47 yards to reach top dribble speed
+DRIBBLE_ACCEL_TIME = ACCELERATION_TIME  # Same time to accelerate (1.8s)
+
 # Player dimensions
 PLAYER_WIDTH = 1.0  # yards (interception reach to each side)
 
@@ -116,6 +122,31 @@ def distance_run_in_time(time_seconds):
         # Full acceleration + constant speed
         extra_time = time_seconds - ACCELERATION_TIME
         return ACCELERATION_DISTANCE + TOP_SPEED * extra_time
+
+
+def time_to_dribble_distance(distance_yards):
+    """Calculate time for a player to dribble a given distance.
+
+    Uses acceleration model at 50% of sprint speed:
+    - Phase 1 (0 to DRIBBLE_ACCEL_DISTANCE): Parabolic acceleration
+    - Phase 2 (beyond): Constant dribble top speed
+
+    Args:
+        distance_yards: Distance in yards
+
+    Returns:
+        Time in seconds to dribble the distance
+    """
+    if distance_yards <= 0:
+        return 0
+
+    if distance_yards <= DRIBBLE_ACCEL_DISTANCE:
+        # Parabolic model: t = DRIBBLE_ACCEL_TIME * sqrt(d / DRIBBLE_ACCEL_DISTANCE)
+        return DRIBBLE_ACCEL_TIME * math.sqrt(distance_yards / DRIBBLE_ACCEL_DISTANCE)
+    else:
+        # Time to reach top dribble speed + time at top speed for remaining distance
+        remaining = distance_yards - DRIBBLE_ACCEL_DISTANCE
+        return DRIBBLE_ACCEL_TIME + remaining / DRIBBLE_TOP_SPEED
 
 
 def ball_travel_time(distance_yards, initial_speed):
@@ -568,7 +599,7 @@ def calculate_position_value(x, y, depth=0, max_depth=2, excluded_positions=None
             continue
 
         dribble_dist = calculate_distance(x, y, new_x, new_y)
-        dribble_time = dribble_dist / (TOP_SPEED * 0.7)
+        dribble_time = time_to_dribble_distance(dribble_dist)
 
         target_result = calculate_position_value(
             new_x, new_y,
@@ -671,6 +702,7 @@ def calculate_dribble_success(from_x, from_y, to_x, to_y, defenders):
 
     Perfect execution assumed - dribble only fails if defender can intercept.
     Uses same physics model as pass interception - checks ALL defenders.
+    Dribbling uses 50% speed with proportional acceleration curve.
 
     Args:
         from_x, from_y: Dribble start
@@ -683,9 +715,6 @@ def calculate_dribble_success(from_x, from_y, to_x, to_y, defenders):
     dribble_dist = calculate_distance(from_x, from_y, to_x, to_y)
     if dribble_dist < 1:
         return 1.0
-
-    # Dribbling speed is slower than sprinting (about 70% of top speed)
-    DRIBBLE_SPEED = TOP_SPEED * 0.7
 
     # Normalize dribble direction
     dx = (to_x - from_x) / dribble_dist
@@ -717,8 +746,8 @@ def calculate_dribble_success(from_x, from_y, to_x, to_y, defenders):
         if def_to_intercept < PLAYER_WIDTH * 1.5:  # 1.5 yards - can't dribble through
             return 0.0
 
-        # Time for dribbler to reach intercept point
-        dribbler_time = proj_dist / DRIBBLE_SPEED
+        # Time for dribbler to reach intercept point (with acceleration curve)
+        dribbler_time = time_to_dribble_distance(proj_dist)
 
         # Time for defender to reach intercept point (needs to get within PLAYER_WIDTH)
         run_dist = max(0, def_to_intercept - PLAYER_WIDTH)

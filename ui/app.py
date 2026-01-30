@@ -36,11 +36,377 @@ evaluator = GameStateEvaluator()
 PITCH_LENGTH_YDS = 120
 PITCH_WIDTH_YDS = 75
 
+# ============================================================
+# PHYSICS CONSTANTS (all in yards and seconds)
+# ============================================================
+# Conversion: 1 meter = 1.09361 yards
+
 def meters_to_yards(m):
     return m * 1.09361
 
 def yards_to_meters(y):
     return y / 1.09361
+
+# Player physics
+# Sprint data: 0-10m in 1.8s, 0-30m in 4.2s
+# Converted: 0-10.94 yards in 1.8s, 0-32.81 yards in 4.2s
+ACCELERATION_DISTANCE = meters_to_yards(10)  # 10.94 yards - distance to reach top speed
+ACCELERATION_TIME = 1.8  # seconds to cover acceleration distance
+TOP_SPEED = meters_to_yards(8.33)  # ~9.1 yards/s (8.33 m/s top speed)
+REACTION_TIME = 0.3  # seconds before defender reacts
+
+# Player dimensions
+PLAYER_WIDTH = 1.0  # yards (interception reach to each side)
+
+# Ball physics
+PASS_SPEED_MIN = meters_to_yards(5)   # ~5.5 yards/s (soft pass)
+PASS_SPEED_MAX = meters_to_yards(20)  # ~21.9 yards/s (hard pass)
+SHOT_SPEED_MIN = meters_to_yards(20)  # ~21.9 yards/s (placed shot)
+SHOT_SPEED_MAX = meters_to_yards(40)  # ~43.7 yards/s (powerful shot)
+BALL_DECELERATION = meters_to_yards(0.5)  # ~0.55 yards/s² friction on grass
+
+
+# ============================================================
+# PHYSICS FUNCTIONS
+# ============================================================
+
+def time_to_run_distance(distance_yards):
+    """Calculate time for a player to run a given distance.
+
+    Uses acceleration model:
+    - Phase 1 (0 to ACCELERATION_DISTANCE): Parabolic acceleration
+    - Phase 2 (beyond): Constant top speed
+
+    Args:
+        distance_yards: Distance in yards
+
+    Returns:
+        Time in seconds to cover the distance
+    """
+    if distance_yards <= 0:
+        return 0
+
+    if distance_yards <= ACCELERATION_DISTANCE:
+        # Parabolic model: t = ACCELERATION_TIME * sqrt(d / ACCELERATION_DISTANCE)
+        return ACCELERATION_TIME * math.sqrt(distance_yards / ACCELERATION_DISTANCE)
+    else:
+        # Time to reach top speed + time at top speed for remaining distance
+        remaining = distance_yards - ACCELERATION_DISTANCE
+        return ACCELERATION_TIME + remaining / TOP_SPEED
+
+
+def distance_run_in_time(time_seconds):
+    """Calculate distance a player can run in given time.
+
+    Inverse of time_to_run_distance.
+
+    Args:
+        time_seconds: Time in seconds
+
+    Returns:
+        Distance in yards
+    """
+    if time_seconds <= 0:
+        return 0
+
+    if time_seconds <= ACCELERATION_TIME:
+        # During acceleration phase: d = ACCELERATION_DISTANCE * (t / ACCELERATION_TIME)²
+        return ACCELERATION_DISTANCE * (time_seconds / ACCELERATION_TIME) ** 2
+    else:
+        # Full acceleration + constant speed
+        extra_time = time_seconds - ACCELERATION_TIME
+        return ACCELERATION_DISTANCE + TOP_SPEED * extra_time
+
+
+def ball_travel_time(distance_yards, initial_speed):
+    """Calculate time for ball to travel a distance with deceleration.
+
+    Ball decelerates due to friction. Uses kinematic equations.
+
+    Args:
+        distance_yards: Distance to travel
+        initial_speed: Initial ball speed in yards/s
+
+    Returns:
+        Time in seconds, or float('inf') if ball stops before reaching
+    """
+    if distance_yards <= 0:
+        return 0
+    if initial_speed <= 0:
+        return float('inf')
+
+    # Using: v² = u² - 2as (deceleration is negative acceleration)
+    # Final velocity squared
+    v_squared = initial_speed ** 2 - 2 * BALL_DECELERATION * distance_yards
+
+    if v_squared <= 0:
+        # Ball stops before reaching target
+        return float('inf')
+
+    # Using: v = u - at, solve for t
+    final_speed = math.sqrt(v_squared)
+    time = (initial_speed - final_speed) / BALL_DECELERATION
+
+    return time
+
+
+def ball_distance_at_time(initial_speed, time_seconds):
+    """Calculate how far ball travels in given time with deceleration.
+
+    Args:
+        initial_speed: Initial ball speed in yards/s
+        time_seconds: Time elapsed
+
+    Returns:
+        Distance traveled in yards
+    """
+    if time_seconds <= 0 or initial_speed <= 0:
+        return 0
+
+    # Time until ball stops
+    time_to_stop = initial_speed / BALL_DECELERATION
+
+    if time_seconds >= time_to_stop:
+        # Ball has stopped - return max distance
+        return (initial_speed ** 2) / (2 * BALL_DECELERATION)
+
+    # Using: s = ut - ½at²
+    distance = initial_speed * time_seconds - 0.5 * BALL_DECELERATION * time_seconds ** 2
+    return max(0, distance)
+
+
+def optimal_pass_speed(distance_yards):
+    """Calculate optimal pass speed for a given distance.
+
+    Shorter passes = softer, longer passes = harder.
+
+    Args:
+        distance_yards: Pass distance
+
+    Returns:
+        Optimal ball speed in yards/s
+    """
+    # Linear interpolation based on distance
+    # 5 yards → min speed, 40+ yards → max speed
+    if distance_yards <= 5:
+        return PASS_SPEED_MIN
+    elif distance_yards >= 40:
+        return PASS_SPEED_MAX
+    else:
+        ratio = (distance_yards - 5) / 35
+        return PASS_SPEED_MIN + ratio * (PASS_SPEED_MAX - PASS_SPEED_MIN)
+
+
+def can_defender_intercept(defender_x, defender_y, ball_start_x, ball_start_y,
+                           ball_end_x, ball_end_y, ball_speed):
+    """Check if defender can intercept a pass.
+
+    Considers:
+    - Reaction time (0.3s delay)
+    - Acceleration curve to reach interception point
+    - Ball travel time with deceleration
+    - Player width (1 yard interception range)
+
+    Args:
+        defender_x, defender_y: Defender position
+        ball_start_x, ball_start_y: Ball start position
+        ball_end_x, ball_end_y: Ball target position
+        ball_speed: Initial ball speed
+
+    Returns:
+        dict with: can_intercept (bool), intercept_point, time_margin
+    """
+    # Find closest point on ball path to defender
+    ball_dx = ball_end_x - ball_start_x
+    ball_dy = ball_end_y - ball_start_y
+    ball_dist = math.sqrt(ball_dx**2 + ball_dy**2)
+
+    if ball_dist == 0:
+        return {'can_intercept': False, 'time_margin': float('inf')}
+
+    # Normalize ball direction
+    ball_dir_x = ball_dx / ball_dist
+    ball_dir_y = ball_dy / ball_dist
+
+    # Vector from ball start to defender
+    to_def_x = defender_x - ball_start_x
+    to_def_y = defender_y - ball_start_y
+
+    # Project defender onto ball path
+    proj_dist = to_def_x * ball_dir_x + to_def_y * ball_dir_y
+    proj_dist = max(0, min(ball_dist, proj_dist))  # Clamp to ball path
+
+    # Closest point on ball path
+    closest_x = ball_start_x + proj_dist * ball_dir_x
+    closest_y = ball_start_y + proj_dist * ball_dir_y
+
+    # Distance from defender to closest point
+    intercept_dist = calculate_distance(defender_x, defender_y, closest_x, closest_y)
+
+    # Defender needs to get within PLAYER_WIDTH of ball path
+    if intercept_dist <= PLAYER_WIDTH:
+        # Already in interception range
+        run_dist = 0
+    else:
+        run_dist = intercept_dist - PLAYER_WIDTH
+
+    # Time for defender to reach interception point (including reaction time)
+    defender_time = REACTION_TIME + time_to_run_distance(run_dist)
+
+    # Time for ball to reach the interception point
+    ball_time = ball_travel_time(proj_dist, ball_speed)
+
+    # Defender intercepts if they arrive before or at same time as ball
+    time_margin = ball_time - defender_time
+    can_intercept = time_margin <= 0
+
+    return {
+        'can_intercept': can_intercept,
+        'intercept_point': (closest_x, closest_y),
+        'intercept_dist_on_path': proj_dist,
+        'defender_run_dist': run_dist,
+        'defender_time': defender_time,
+        'ball_time': ball_time,
+        'time_margin': time_margin  # Negative = defender arrives first
+    }
+
+
+def calculate_through_ball_options(ball_x, ball_y, attacker, defenders):
+    """Calculate through ball options for an attacker.
+
+    Through ball = pass to space in front of a running player.
+    Considers:
+    - Where attacker can run to (any direction, prioritizing toward goal)
+    - Whether ball reaches space before defenders intercept
+    - Whether attacker reaches space before/with the ball
+
+    Args:
+        ball_x, ball_y: Current ball position
+        attacker: Attacker dict with x, y, id
+        defenders: List of defender dicts
+
+    Returns:
+        List of through ball options with target positions and success probabilities
+    """
+    options = []
+    att_x = attacker['x']
+    att_y = attacker['y']
+
+    # Generate potential run destinations
+    # Prioritize: forward toward goal, diagonal runs, wide runs
+    run_directions = []
+
+    # Forward runs (toward goal at x=60)
+    for angle in range(-45, 46, 15):  # -45° to +45° from direct forward
+        rad = math.radians(angle)
+        # Run distances: 5, 10, 15, 20 yards ahead
+        for run_dist in [5, 10, 15, 20]:
+            target_x = att_x + run_dist * math.cos(rad)
+            target_y = att_y + run_dist * math.sin(rad)
+            run_directions.append((target_x, target_y, run_dist))
+
+    for target_x, target_y, run_dist in run_directions:
+        # Check bounds
+        if target_x > 58 or target_x < ball_x or abs(target_y) > 36:
+            continue
+
+        # Must be ahead of ball (forward pass)
+        if target_x <= ball_x + 3:
+            continue
+
+        # Calculate pass distance
+        pass_dist = calculate_distance(ball_x, ball_y, target_x, target_y)
+        if pass_dist < 8 or pass_dist > 50:  # Through balls are medium-long range
+            continue
+
+        # Calculate optimal ball speed for this distance
+        ball_speed = optimal_pass_speed(pass_dist)
+
+        # Time for ball to reach target space
+        ball_time = ball_travel_time(pass_dist, ball_speed)
+        if ball_time == float('inf'):
+            continue
+
+        # Time for attacker to reach target space
+        attacker_run_dist = calculate_distance(att_x, att_y, target_x, target_y)
+        attacker_time = time_to_run_distance(attacker_run_dist)
+
+        # Attacker must arrive at or before ball (can wait for ball)
+        # Give 0.5s margin - attacker can arrive up to 0.5s after ball
+        if attacker_time > ball_time + 0.5:
+            continue
+
+        # Check if any defender can intercept
+        can_complete = True
+        closest_defender_margin = float('inf')
+
+        for defender in defenders:
+            if defender['id'] == 1:  # Skip GK for now
+                continue
+
+            intercept = can_defender_intercept(
+                defender['x'], defender['y'],
+                ball_x, ball_y,
+                target_x, target_y,
+                ball_speed
+            )
+
+            if intercept['can_intercept']:
+                can_complete = False
+                break
+            else:
+                closest_defender_margin = min(closest_defender_margin, intercept['time_margin'])
+
+        if not can_complete:
+            continue
+
+        # Also check if defender can reach the target space before attacker
+        for defender in defenders:
+            if defender['id'] == 1:
+                continue
+
+            def_dist = calculate_distance(defender['x'], defender['y'], target_x, target_y)
+            def_time = REACTION_TIME + time_to_run_distance(def_dist)
+
+            # If defender reaches space significantly before attacker, not a good option
+            if def_time < attacker_time - 0.3:
+                can_complete = False
+                break
+
+        if not can_complete:
+            continue
+
+        # Calculate success probability based on timing margins
+        # More margin = higher success
+        if closest_defender_margin > 1.0:
+            success_prob = 0.90
+        elif closest_defender_margin > 0.5:
+            success_prob = 0.80
+        elif closest_defender_margin > 0.2:
+            success_prob = 0.65
+        else:
+            success_prob = 0.50
+
+        # Reduce success for very long passes
+        if pass_dist > 35:
+            success_prob *= 0.85
+
+        options.append({
+            'target_x': target_x,
+            'target_y': target_y,
+            'pass_distance': pass_dist,
+            'ball_speed': ball_speed,
+            'ball_time': ball_time,
+            'attacker_run_dist': attacker_run_dist,
+            'attacker_time': attacker_time,
+            'defender_margin': closest_defender_margin,
+            'success_prob': success_prob,
+        })
+
+    # Sort by position value (closer to goal = better)
+    options.sort(key=lambda o: -o['target_x'])
+
+    return options[:3]  # Return top 3 through ball options per attacker
 
 
 # ============================================================
@@ -182,53 +548,83 @@ def calculate_shot_block_probability(x, y, defenders):
 
 
 def calculate_pass_success(from_x, from_y, to_x, to_y, defenders):
-    """Calculate probability of completing a pass."""
+    """Calculate probability of completing a pass using physics model.
+
+    Uses realistic interception calculations with:
+    - Ball travel time (with deceleration)
+    - Defender reaction time (0.3s)
+    - Defender acceleration curve
+    - Player width (1 yard interception range)
+
+    Args:
+        from_x, from_y: Pass origin
+        to_x, to_y: Pass target
+        defenders: List of defender dicts
+
+    Returns:
+        float: Success probability (0-1)
+    """
     pass_dist = calculate_distance(from_x, from_y, to_x, to_y)
 
-    # Base success from distance
-    if pass_dist < 10:
-        base_success = 0.92
-    elif pass_dist < 20:
-        base_success = 0.85
-    elif pass_dist < 30:
-        base_success = 0.75
-    elif pass_dist < 40:
-        base_success = 0.65
-    else:
-        base_success = 0.50
+    if pass_dist < 1:
+        return 0.99  # Very short pass
 
-    # Reduce for defenders near passing lane
-    min_intercept_dist = float('inf')
+    # Calculate optimal ball speed for this pass
+    ball_speed = optimal_pass_speed(pass_dist)
+
+    # Check each defender for interception
+    min_time_margin = float('inf')
+    any_intercept = False
+
     for d in defenders:
-        intercept_dist = point_to_line_distance(d['x'], d['y'], from_x, from_y, to_x, to_y)
-        # Only count if defender can realistically intercept
-        d_to_ball = calculate_distance(d['x'], d['y'], from_x, from_y)
-        d_to_target = calculate_distance(d['x'], d['y'], to_x, to_y)
-        if d_to_ball < pass_dist * 1.2 or d_to_target < pass_dist * 0.8:
-            min_intercept_dist = min(min_intercept_dist, intercept_dist)
+        if d.get('id') == 1:  # Skip GK for regular passes
+            continue
 
-    # Intercept factor
-    if min_intercept_dist < 2:
-        intercept_factor = 0.3
-    elif min_intercept_dist < 4:
-        intercept_factor = 0.5
-    elif min_intercept_dist < 6:
-        intercept_factor = 0.7
-    elif min_intercept_dist < 10:
-        intercept_factor = 0.85
+        intercept = can_defender_intercept(
+            d['x'], d['y'],
+            from_x, from_y,
+            to_x, to_y,
+            ball_speed
+        )
+
+        if intercept['can_intercept']:
+            any_intercept = True
+            # Keep track of how close other defenders are
+            min_time_margin = min(min_time_margin, intercept['time_margin'])
+        else:
+            min_time_margin = min(min_time_margin, intercept['time_margin'])
+
+    # If any defender intercepts, very low success
+    if any_intercept:
+        return 0.15  # Small chance they miscontrol
+
+    # Success based on closest defender's time margin
+    # More margin = higher success
+    if min_time_margin > 1.5:
+        base_success = 0.95
+    elif min_time_margin > 1.0:
+        base_success = 0.90
+    elif min_time_margin > 0.6:
+        base_success = 0.82
+    elif min_time_margin > 0.3:
+        base_success = 0.70
+    elif min_time_margin > 0.1:
+        base_success = 0.55
     else:
-        intercept_factor = 1.0
+        base_success = 0.40
 
-    # Pressure on receiver reduces success
-    receiver_pressure = 0
+    # Pressure on receiver (defender close to target)
+    # Can't steal ball but makes control harder
     for d in defenders:
+        if d.get('id') == 1:
+            continue
         d_to_target = calculate_distance(d['x'], d['y'], to_x, to_y)
-        if d_to_target < 3:
-            receiver_pressure = max(receiver_pressure, 0.3)
-        elif d_to_target < 6:
-            receiver_pressure = max(receiver_pressure, 0.15)
+        if d_to_target < PLAYER_WIDTH * 2:
+            base_success *= 0.85  # Very tight, hard to control
+        elif d_to_target < PLAYER_WIDTH * 4:
+            base_success *= 0.92  # Under pressure
 
-    return base_success * intercept_factor * (1 - receiver_pressure * 0.5)
+    return min(0.98, base_success)
 
 
 def calculate_dribble_success(from_x, from_y, to_x, to_y, defenders):
@@ -751,6 +1147,74 @@ def analyze_passing_options():
             'is_in_behind': is_behind,
             'in_overload': in_overload,
         })
+
+        # ========================================
+        # THROUGH BALLS - Pass to space in front of player
+        # ========================================
+        through_ball_opts = calculate_through_ball_options(
+            ball['x'], ball['y'], attacker, defenders
+        )
+
+        for tb in through_ball_opts:
+            tb_target_x = tb['target_x']
+            tb_target_y = tb['target_y']
+
+            # Calculate position value at through ball target
+            tb_position_value = calculate_position_value(
+                tb_target_x, tb_target_y,
+                depth=1,
+                max_depth=2
+            )
+
+            # EV = success × position_value - turnover_cost
+            tb_turnover_cost = (1 - tb['success_prob']) * 0.08  # Higher cost for through balls
+            tb_ev = tb['success_prob'] * tb_position_value - tb_turnover_cost
+
+            tb_xg = calculate_xg(tb_target_x, tb_target_y)
+
+            # Recommendation
+            if tb_ev > 0.15 and tb['success_prob'] > 0.6:
+                tb_rec = "HIGH_VALUE"
+            elif tb_ev > 0.10 and tb['success_prob'] > 0.55:
+                tb_rec = "HIGH_VALUE"
+            elif tb_ev > 0.06 and tb['success_prob'] > 0.5:
+                tb_rec = "MODERATE"
+            elif tb['success_prob'] > 0.6:
+                tb_rec = "SAFE"
+            else:
+                tb_rec = "LOW_VALUE"
+
+            options.append({
+                'action': 'through_ball',
+                'target_x': tb_target_x,
+                'target_y': tb_target_y,
+                'target_player': attacker['id'],
+                'success_prob': tb['success_prob'],
+                'xg_gain': tb_xg - current_xg,
+                'xg_target': tb_xg,
+                'target_position_value': tb_position_value,
+                'ev': tb_ev,
+                'ev_breakdown': {
+                    'pass_success': round(tb['success_prob'], 3),
+                    'target_position_value': round(tb_position_value, 4),
+                    'turnover_cost': round(tb_turnover_cost, 4),
+                    'final_ev': round(tb_ev, 4),
+                    'ball_speed': round(tb['ball_speed'], 1),
+                    'ball_time': round(tb['ball_time'], 2),
+                    'attacker_run_time': round(tb['attacker_time'], 2),
+                    'defender_margin': round(tb['defender_margin'], 2),
+                },
+                'recommendation': tb_rec,
+                'receiver_pressure': 0,  # Running into space
+                'receiver_facing_goal': True,
+                'receiver_forward_space': 1.0,
+                'intercept_prob': 1 - tb['success_prob'],
+                'is_switch': is_switch_of_play(ball['y'], tb_target_y),
+                'is_in_behind': True,
+                'in_overload': in_overload,
+                'is_through_ball': True,
+                'run_distance': round(tb['attacker_run_dist'], 1),
+            })
 
     # ========================================
     # Analyze shooting option

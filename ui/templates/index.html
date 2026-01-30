@@ -361,11 +361,8 @@
                     </label>
                 </div>
                 <div class="toggle-row">
-                    <span>Show Gaps</span>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="showGaps" checked onchange="render()">
-                        <span class="toggle-slider"></span>
-                    </label>
+                    <span>Gaps (click items below)</span>
+                    <span style="font-size:0.75rem;color:#888;">Click gap in list to show</span>
                 </div>
                 <div class="toggle-row">
                     <span>Show Best Option</span>
@@ -471,6 +468,21 @@
         let draggingPlayer = null;
         let scale = 1;
         let offsetX = 0, offsetY = 0;
+        let visibleGaps = new Set();  // Track which gaps are visible
+
+        // Toggle gap visibility
+        function toggleGap(index) {
+            if (visibleGaps.has(index)) {
+                visibleGaps.delete(index);
+                document.getElementById(`gapToggle${index}`).textContent = 'CLICK TO SHOW';
+                document.getElementById(`gapToggle${index}`).style.color = '#888';
+            } else {
+                visibleGaps.add(index);
+                document.getElementById(`gapToggle${index}`).textContent = 'SHOWING';
+                document.getElementById(`gapToggle${index}`).style.color = '#4ade80';
+            }
+            render();
+        }
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
@@ -644,17 +656,18 @@
                 document.getElementById('currentEv').title = analysis.chain_ev.explanation;
             }
 
-            // Gaps
+            // Gaps - click to toggle visibility on pitch
             let gapsHtml = '';
             analysis.gaps.slice(0, 5).forEach((gap, i) => {
                 const expClass = gap.exploitable ? 'exploitable' : '';
                 const badgeClass = gap.exploitable ? '' : 'covered';
                 const badgeText = gap.exploitable ? 'EXPLOITABLE' : 'COVERED';
                 gapsHtml += `
-                    <div class="gap-item ${expClass}">
+                    <div class="gap-item ${expClass}" onclick="toggleGap(${i})" style="cursor: pointer;">
                         <div class="gap-header">
                             <span class="gap-title">Gap ${i + 1}</span>
                             <span class="gap-badge ${badgeClass}">${badgeText}</span>
+                            <span class="gap-toggle" id="gapToggle${i}" style="font-size:0.7rem;margin-left:auto;color:#888;">CLICK TO SHOW</span>
                         </div>
                         <div class="gap-details">
                             Size: ${gap.size.toFixed(0)} yds |
@@ -665,6 +678,8 @@
                 `;
             });
             document.getElementById('gapsList').innerHTML = gapsHtml || '<div class="loading">No gaps detected</div>';
+            // Reset visible gaps
+            visibleGaps = new Set();
 
             // Options
             let optionsHtml = '';
@@ -780,7 +795,8 @@
             }
 
             // Draw gaps if enabled
-            if (document.getElementById('showGaps').checked && analysis) {
+            // Draw gaps that user has selected (click to show)
+            if (analysis && visibleGaps.size > 0) {
                 drawGaps();
             }
 
@@ -985,7 +1001,10 @@
         }
 
         function drawGaps() {
-            analysis.gaps.forEach(gap => {
+            // Only draw gaps that user has clicked to show
+            analysis.gaps.forEach((gap, index) => {
+                if (!visibleGaps.has(index)) return;  // Skip if not visible
+
                 const pos = pitchToCanvas(gap.x, gap.y);
                 const radius = (gap.size / 2) * scale;
 
@@ -998,6 +1017,12 @@
                 ctx.setLineDash([5, 5]);
                 ctx.stroke();
                 ctx.setLineDash([]);
+
+                // Label the gap
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Gap ${index + 1}`, pos.x, pos.y);
             });
         }
 

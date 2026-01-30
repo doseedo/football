@@ -288,8 +288,11 @@ def can_defender_intercept(defender_x, defender_y, ball_start_x, ball_start_y,
     ball_time = ball_travel_time(proj_dist, ball_speed)
 
     # Defender intercepts if they arrive before or at same time as ball
+    # time_margin = ball_time - defender_time
+    # Positive margin = defender arrives first (can intercept)
+    # Negative margin = ball arrives first (cannot intercept)
     time_margin = ball_time - defender_time
-    can_intercept = time_margin <= 0
+    can_intercept = time_margin >= 0
 
     return {
         'can_intercept': can_intercept,
@@ -298,7 +301,7 @@ def can_defender_intercept(defender_x, defender_y, ball_start_x, ball_start_y,
         'defender_run_dist': run_dist,
         'defender_time': defender_time,
         'ball_time': ball_time,
-        'time_margin': time_margin  # Negative = defender arrives first
+        'time_margin': time_margin  # Positive = defender arrives first
     }
 
 
@@ -343,6 +346,11 @@ def calculate_through_ball_options(ball_x, ball_y, attacker, defenders):
 
         # Must be ahead of ball (forward pass)
         if target_x <= ball_x + 3:
+            continue
+
+        # Offside check - use attacker's STARTING position, not target
+        # (player runs onto through ball from onside position)
+        if is_offside(att_x, ball_x):
             continue
 
         # Calculate pass distance
@@ -652,10 +660,10 @@ def calculate_shot_block_probability(x, y, defenders):
     return min(0.7, block_prob)  # Cap at 70%
 
 
-def calculate_pass_success(from_x, from_y, to_x, to_y, defenders):
+def calculate_pass_success(from_x, from_y, to_x, to_y, defenders, check_offside=True, receiver_x=None):
     """Calculate if a pass can be completed (binary: 100% or 0%).
 
-    Perfect execution assumed - pass only fails if physically intercepted.
+    Perfect execution assumed - pass only fails if physically intercepted or offside.
     Uses physics model for interception:
     - Ball travel time (with deceleration)
     - Defender reaction time (0.3s)
@@ -666,14 +674,22 @@ def calculate_pass_success(from_x, from_y, to_x, to_y, defenders):
         from_x, from_y: Pass origin
         to_x, to_y: Pass target
         defenders: List of defender dicts
+        check_offside: Whether to check offside rule
+        receiver_x: Receiver's x position for offside check (defaults to to_x)
 
     Returns:
-        float: 1.0 if pass completes, 0.0 if intercepted
+        float: 1.0 if pass completes, 0.0 if intercepted or offside
     """
     pass_dist = calculate_distance(from_x, from_y, to_x, to_y)
 
     if pass_dist < 1:
         return 1.0  # Very short pass always works
+
+    # Check offside - use receiver's actual position, not target
+    if check_offside:
+        check_x = receiver_x if receiver_x is not None else to_x
+        if is_offside(check_x, from_x):
+            return 0.0  # Offside
 
     # Calculate optimal ball speed for this pass
     ball_speed = optimal_pass_speed(pass_dist)
@@ -762,39 +778,59 @@ def calculate_dribble_success(from_x, from_y, to_x, to_y, defenders):
 
 
 def create_default_scenario():
-    """Create default game scenario with numbered players.
+    """Create default game scenario with football-accurate squad numbers.
 
     Team 0 = attacking (blue), Team 1 = defending (red)
     Player positions in yards, centered coordinate system.
-    """
-    # Team 0 (attacking left to right) - blue
-    attackers = [
-        {"id": 1, "x": -55, "y": 0, "team": 0},      # GK
-        {"id": 2, "x": -35, "y": -25, "team": 0},    # LB
-        {"id": 3, "x": -38, "y": -8, "team": 0},     # CB
-        {"id": 4, "x": -38, "y": 8, "team": 0},      # CB
-        {"id": 5, "x": -35, "y": 25, "team": 0},     # RB
-        {"id": 6, "x": -15, "y": -18, "team": 0},    # LM
-        {"id": 7, "x": -10, "y": 0, "team": 0},      # CM (ball carrier)
-        {"id": 8, "x": -15, "y": 18, "team": 0},     # RM
-        {"id": 9, "x": 25, "y": -15, "team": 0},     # LW
-        {"id": 10, "x": 30, "y": 5, "team": 0},      # ST
-        {"id": 11, "x": 22, "y": 20, "team": 0},     # RW
-    ]
 
-    # Team 1 (defending) - red
+    Defenders: 4-4-2 low block (narrower, RB/LB at y=±18)
+    - Back 4 at x=42 (edge of penalty box)
+    - Midfield 4 at x=31 (between back and front)
+    - Front 2 at x=20
+
+    Attackers: Positioned to attack the block
+    - 5 players at x=42 in gaps between back 4
+    - 2 players at x=26 between defensive lines
+    - 3 players at x=15 (5 yards behind front line)
+    """
+    # Team 1 (defending) - red - 4-4-2 low block
+    # Football numbers: 1=GK, 2=RB, 3=LB, 4=CM, 5=CB, 6=CB, 7=RM, 8=CM, 9=ST, 10=ST, 11=LM
     defenders = [
         {"id": 1, "x": 55, "y": 0, "team": 1},       # GK
-        {"id": 2, "x": 40, "y": -28, "team": 1},     # LB
-        {"id": 3, "x": 44, "y": -10, "team": 1},     # CB
-        {"id": 4, "x": 44, "y": 5, "team": 1},       # CB
-        {"id": 5, "x": 40, "y": 22, "team": 1},      # RB
-        {"id": 6, "x": 25, "y": -12, "team": 1},     # LM
-        {"id": 7, "x": 18, "y": 8, "team": 1},       # CM
-        {"id": 8, "x": 22, "y": 18, "team": 1},      # RM
-        {"id": 9, "x": -5, "y": -8, "team": 1},      # Pressing
-        {"id": 10, "x": -12, "y": 12, "team": 1},    # Pressing
-        {"id": 11, "x": -18, "y": 0, "team": 1},     # Pressing
+        # Back 4 at x=42 (narrower: ±18 for fullbacks, ±6 for CBs)
+        {"id": 2, "x": 42, "y": 18, "team": 1},      # RB
+        {"id": 5, "x": 42, "y": 6, "team": 1},       # RCB
+        {"id": 6, "x": 42, "y": -6, "team": 1},      # LCB
+        {"id": 3, "x": 42, "y": -18, "team": 1},     # LB
+        # Midfield 4 at x=31
+        {"id": 7, "x": 31, "y": 14, "team": 1},      # RM
+        {"id": 4, "x": 31, "y": 5, "team": 1},       # RCM
+        {"id": 8, "x": 31, "y": -5, "team": 1},      # LCM
+        {"id": 11, "x": 31, "y": -14, "team": 1},    # LM
+        # Front 2 at x=20
+        {"id": 9, "x": 20, "y": 6, "team": 1},       # RST
+        {"id": 10, "x": 20, "y": -6, "team": 1},     # LST
+    ]
+
+    # Team 0 (attacking left to right) - blue
+    # Football numbers: 1=GK, 2=RB, 3=LB, 4=CM, 5=CB, 6=CM, 7=RW, 8=CM, 9=ST, 10=CAM, 11=LW
+    # Back 3 pushed up (2, 3, 5), between lines 4 (4, 6, 8, 10), front 3 (7, 9, 11)
+    attackers = [
+        {"id": 1, "x": -55, "y": 0, "team": 0},      # GK
+        # 3 players at x=42: ST central, wingers wide
+        {"id": 11, "x": 42, "y": -28, "team": 0},    # LW (wide left)
+        {"id": 9, "x": 42, "y": 0, "team": 0},       # ST (central)
+        {"id": 7, "x": 42, "y": 28, "team": 0},      # RW (wide right)
+        # Between back line (x=42) and midfield (x=31): #10 and #8 at x=36
+        {"id": 10, "x": 36, "y": 12, "team": 0},     # CAM/RIF (right half-space)
+        {"id": 8, "x": 36, "y": -12, "team": 0},     # CAM/LIF (left half-space)
+        # Between midfield (x=31) and front 2 (x=20): #6 and #4 at x=26
+        {"id": 6, "x": 26, "y": 8, "team": 0},       # RCM
+        {"id": 4, "x": 26, "y": -8, "team": 0},      # LCM
+        # 3 players at x=15 (5 yards behind front line at x=20)
+        {"id": 2, "x": 15, "y": 12, "team": 0},      # RB pushed up
+        {"id": 5, "x": 15, "y": 0, "team": 0},       # CB/DM (ball carrier)
+        {"id": 3, "x": 15, "y": -12, "team": 0},     # LB pushed up
     ]
 
     return attackers, defenders
@@ -804,7 +840,7 @@ def create_default_scenario():
 current_state = {
     'attackers': [],
     'defenders': [],
-    'ball': {"x": -10, "y": 0},
+    'ball': {"x": 15, "y": 0},  # With #5 (CB/DM)
 }
 
 # Initialize with default
@@ -819,6 +855,54 @@ def get_all_players():
 def calculate_distance(x1, y1, x2, y2):
     """Calculate Euclidean distance."""
     return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+
+def get_offside_line():
+    """Get the x-position of the offside line.
+
+    Offside line is the second-to-last defender (last outfield defender,
+    since GK is typically furthest back).
+
+    Returns:
+        float: x-position of the offside line
+    """
+    defenders = current_state['defenders']
+    # Sort defenders by x position (furthest forward first for defending team)
+    # Since defenders defend goal at x=60, higher x = deeper
+    sorted_defs = sorted(defenders, key=lambda d: d['x'], reverse=True)
+
+    # Second-to-last = index 1 (index 0 is GK typically)
+    if len(sorted_defs) >= 2:
+        return sorted_defs[1]['x']
+    return 60  # Default to goal line if not enough defenders
+
+
+def is_offside(player_x, ball_x):
+    """Check if a player position is offside.
+
+    A player is offside if:
+    1. They are in the opponent's half (x > 0)
+    2. They are beyond the offside line (second-to-last defender)
+    3. They are beyond the ball
+
+    Args:
+        player_x: Player's x position
+        ball_x: Ball's x position when pass is made
+
+    Returns:
+        bool: True if offside
+    """
+    # Must be in attacking half
+    if player_x <= 0:
+        return False
+
+    # Must be ahead of the ball
+    if player_x <= ball_x:
+        return False
+
+    # Check against offside line
+    offside_line = get_offside_line()
+    return player_x > offside_line
 
 
 def calculate_ball_pressure():
@@ -1678,8 +1762,424 @@ def move_player():
 def reset():
     """Reset to default scenario."""
     current_state['attackers'], current_state['defenders'] = create_default_scenario()
-    current_state['ball'] = {"x": -10, "y": 0}
+    current_state['ball'] = {"x": 15, "y": 0}  # With #5 (CB/DM)
     return jsonify({'success': True})
+
+
+# ============================================================
+# ACTION SIMULATION - Player Movement AI
+# ============================================================
+
+def get_attacker_target(attacker, ball_dest_x, ball_dest_y, is_receiver, ball_carrier_id,
+                        occupied_positions=None, chain_players=None):
+    """Determine where an attacker should run during an action.
+
+    Players maintain their relative positions and spacing. Chain players
+    (those in the optimal passing sequence) hold position to keep the chain valid.
+
+    Args:
+        attacker: Attacker dict with x, y, id
+        ball_dest_x, ball_dest_y: Where the ball is going
+        is_receiver: True if this attacker is receiving the ball
+        ball_carrier_id: ID of current ball carrier (to exclude)
+        occupied_positions: List of (x, y) positions already claimed by other players
+        chain_players: Set of player IDs involved in the optimal chain (should hold position)
+
+    Returns:
+        (target_x, target_y) - where this attacker should move toward
+    """
+    if occupied_positions is None:
+        occupied_positions = []
+    if chain_players is None:
+        chain_players = set()
+
+    MIN_PLAYER_SPACING = 5  # Minimum yards between players
+
+    def is_position_free(x, y):
+        """Check if position is far enough from other players."""
+        for ox, oy in occupied_positions:
+            if calculate_distance(x, y, ox, oy) < MIN_PLAYER_SPACING:
+                return False
+        return True
+
+    if attacker['id'] == 1:  # GK stays put
+        return attacker['x'], attacker['y']
+
+    if attacker['id'] == ball_carrier_id:  # Ball carrier doesn't run
+        return attacker['x'], attacker['y']
+
+    if is_receiver:
+        # Receiver moves to ball destination
+        return ball_dest_x, ball_dest_y
+
+    att_x, att_y = attacker['x'], attacker['y']
+
+    # If this player is part of the optimal chain, HOLD POSITION
+    # This keeps the chain valid after the first pass
+    if attacker['id'] in chain_players:
+        return att_x, att_y
+
+    # Non-chain players: make supporting runs but maintain spacing
+    offside_line = get_offside_line()
+
+    # Determine movement based on position relative to ball
+    if att_x > ball_dest_x + 8:
+        # Ahead of ball - hold width, slight adjustment to stay onside
+        target_x = min(att_x, offside_line - 1)
+        target_y = att_y
+    elif att_x > ball_dest_x:
+        # Slightly ahead - hold position, maybe adjust laterally
+        target_x = att_x
+        # Move away from ball to create space for chain
+        if abs(att_y - ball_dest_y) < 8:
+            target_y = att_y + (4 if att_y > ball_dest_y else -4)
+        else:
+            target_y = att_y
+    else:
+        # Behind ball - move forward to support but not into chain space
+        target_x = min(att_x + 4, ball_dest_x - 5)
+        target_y = att_y
+
+    # Check if target is free, if not adjust
+    if not is_position_free(target_x, target_y):
+        # Try moving wider
+        for offset in [5, -5, 8, -8]:
+            test_y = att_y + offset
+            if abs(test_y) <= 35 and is_position_free(target_x, test_y):
+                target_y = test_y
+                break
+
+    # Stay onside
+    target_x = min(target_x, offside_line - 1)
+
+    # Stay in bounds
+    target_x = max(-55, min(55, target_x))
+    target_y = max(-35, min(35, target_y))
+
+    return target_x, target_y
+
+
+def get_defender_target(defender, ball_dest_x, ball_dest_y, attackers, ball_start_x, ball_start_y):
+    """Determine where a defender should move during an action.
+
+    Defenders move as a unit - shift laterally toward ball, maintain shape.
+
+    Args:
+        defender: Defender dict with x, y, id
+        ball_dest_x, ball_dest_y: Where the ball is going
+        attackers: List of attacker dicts
+        ball_start_x, ball_start_y: Where the ball started
+
+    Returns:
+        (target_x, target_y) - where this defender should move toward
+    """
+    if defender['id'] == 1:  # GK stays on line, shifts laterally
+        # GK shifts toward ball destination side
+        target_y = ball_dest_y * 0.3  # Move partway toward ball side
+        return defender['x'], target_y
+
+    def_x, def_y = defender['x'], defender['y']
+
+    # Unit-based movement: shift toward ball side as a block
+    # Calculate lateral shift amount based on ball position
+    # Ball at y=0 means centered, ball at y=30 means shift right
+
+    # Shift amount: move toward ball side, but don't over-commit
+    lateral_shift = ball_dest_y * 0.15  # Shift 15% toward ball side
+
+    # Compress horizontally when ball is central, expand when wide
+    if abs(ball_dest_y) < 10:
+        # Ball central - compress slightly
+        compress_factor = 0.95
+    else:
+        # Ball wide - maintain or slight expand
+        compress_factor = 1.0
+
+    target_y = def_y * compress_factor + lateral_shift
+
+    # Minimal forward/backward movement - just maintain line depth
+    # Don't chase, stay in shape
+    target_x = def_x
+
+    # Clamp to reasonable positions
+    target_y = max(-35, min(35, target_y))
+
+    return target_x, target_y
+
+
+def move_player_toward(player_x, player_y, target_x, target_y, max_distance):
+    """Move player toward target, limited by max_distance.
+
+    Args:
+        player_x, player_y: Current position
+        target_x, target_y: Target position
+        max_distance: Maximum distance player can move
+
+    Returns:
+        (new_x, new_y) - new player position
+    """
+    dx = target_x - player_x
+    dy = target_y - player_y
+    dist = math.sqrt(dx**2 + dy**2)
+
+    if dist <= 0:
+        return player_x, player_y
+
+    if dist <= max_distance:
+        # Can reach target
+        return target_x, target_y
+    else:
+        # Move max_distance toward target
+        ratio = max_distance / dist
+        new_x = player_x + dx * ratio
+        new_y = player_y + dy * ratio
+        return new_x, new_y
+
+
+def simulate_action(action):
+    """Simulate an action and update game state with player movement.
+
+    Chain-aware: Players involved in the optimal chain hold their positions
+    so the chain remains valid. Other players move but avoid overlapping.
+
+    Args:
+        action: Dict with action details (action type, target_x, target_y, etc.)
+
+    Returns:
+        Dict with movement details and new state
+    """
+    ball = current_state['ball']
+    attackers = current_state['attackers']
+    defenders = current_state['defenders']
+
+    ball_start_x = ball['x']
+    ball_start_y = ball['y']
+    ball_dest_x = action.get('target_x', ball_start_x)
+    ball_dest_y = action.get('target_y', ball_start_y)
+    action_type = action.get('action', 'pass')
+    target_player_id = action.get('target_player')
+
+    # Find ball carrier (attacker closest to ball)
+    ball_carrier_id = None
+    min_dist = float('inf')
+    for att in attackers:
+        d = calculate_distance(att['x'], att['y'], ball_start_x, ball_start_y)
+        if d < min_dist:
+            min_dist = d
+            ball_carrier_id = att['id']
+
+    # Calculate the optimal chain from the NEW ball position
+    # Players in this chain should hold position to keep the chain valid
+    chain_result = calculate_position_value(ball_dest_x, ball_dest_y, depth=0, max_depth=2)
+    chain_players = set()
+    for step in chain_result.get('chain', []):
+        if 'player_id' in step:
+            chain_players.add(step['player_id'])
+
+    # Calculate action duration
+    if action_type == 'dribble':
+        # Dribble time
+        dribble_dist = calculate_distance(ball_start_x, ball_start_y, ball_dest_x, ball_dest_y)
+        duration = time_to_dribble_distance(dribble_dist)
+    elif action_type == 'shoot':
+        # Shot is instant (or very fast) - minimal movement
+        duration = 0.3
+    else:
+        # Pass or through ball - ball travel time
+        pass_dist = calculate_distance(ball_start_x, ball_start_y, ball_dest_x, ball_dest_y)
+        ball_speed = optimal_pass_speed(pass_dist)
+        duration = ball_travel_time(pass_dist, ball_speed)
+        if duration == float('inf'):
+            duration = pass_dist / PASS_SPEED_MIN  # Fallback
+
+    # Clamp duration to reasonable range
+    duration = max(0.1, min(duration, 5.0))
+
+    # Calculate movement distances
+    # Attackers: full time to move (they anticipate)
+    attacker_move_dist = distance_run_in_time(duration)
+
+    # Defenders: lose reaction time
+    defender_time = max(0, duration - REACTION_TIME)
+    defender_move_dist = distance_run_in_time(defender_time)
+
+    # Track movements for visualization
+    movements = []
+
+    # Track occupied positions to avoid overlaps
+    occupied_positions = []
+
+    # First, determine where each attacker will go (two passes to handle dependencies)
+    attacker_targets = {}
+
+    # Pass 1: Chain players and receiver get priority
+    for attacker in attackers:
+        is_receiver = attacker['id'] == target_player_id
+
+        if is_receiver:
+            # Receiver goes to ball
+            attacker_targets[attacker['id']] = (ball_dest_x, ball_dest_y)
+            occupied_positions.append((ball_dest_x, ball_dest_y))
+        elif attacker['id'] in chain_players:
+            # Chain players hold position
+            attacker_targets[attacker['id']] = (attacker['x'], attacker['y'])
+            occupied_positions.append((attacker['x'], attacker['y']))
+
+    # Pass 2: Non-chain players find positions avoiding occupied spaces
+    for attacker in attackers:
+        if attacker['id'] in attacker_targets:
+            continue  # Already assigned
+
+        target_x, target_y = get_attacker_target(
+            attacker, ball_dest_x, ball_dest_y,
+            is_receiver=False,
+            ball_carrier_id=ball_carrier_id,
+            occupied_positions=occupied_positions,
+            chain_players=chain_players
+        )
+        attacker_targets[attacker['id']] = (target_x, target_y)
+        occupied_positions.append((target_x, target_y))
+
+    # Now move attackers to their targets
+    for attacker in attackers:
+        target_x, target_y = attacker_targets[attacker['id']]
+
+        old_x, old_y = attacker['x'], attacker['y']
+        new_x, new_y = move_player_toward(old_x, old_y, target_x, target_y, attacker_move_dist)
+
+        # Clamp to pitch
+        new_x = max(-58, min(58, new_x))
+        new_y = max(-36, min(36, new_y))
+
+        if old_x != new_x or old_y != new_y:
+            movements.append({
+                'player_id': attacker['id'],
+                'team': 0,
+                'from_x': old_x,
+                'from_y': old_y,
+                'to_x': new_x,
+                'to_y': new_y,
+                'distance': calculate_distance(old_x, old_y, new_x, new_y)
+            })
+
+        attacker['x'] = new_x
+        attacker['y'] = new_y
+
+    # Move defenders
+    for defender in defenders:
+        target_x, target_y = get_defender_target(
+            defender, ball_dest_x, ball_dest_y, attackers, ball_start_x, ball_start_y
+        )
+
+        old_x, old_y = defender['x'], defender['y']
+        new_x, new_y = move_player_toward(old_x, old_y, target_x, target_y, defender_move_dist)
+
+        # Clamp to pitch
+        new_x = max(-58, min(58, new_x))
+        new_y = max(-36, min(36, new_y))
+
+        if old_x != new_x or old_y != new_y:
+            movements.append({
+                'player_id': defender['id'],
+                'team': 1,
+                'from_x': old_x,
+                'from_y': old_y,
+                'to_x': new_x,
+                'to_y': new_y,
+                'distance': calculate_distance(old_x, old_y, new_x, new_y)
+            })
+
+        defender['x'] = new_x
+        defender['y'] = new_y
+
+    # Update ball position
+    current_state['ball']['x'] = ball_dest_x
+    current_state['ball']['y'] = ball_dest_y
+
+    return {
+        'action': action_type,
+        'duration': round(duration, 2),
+        'ball_from': {'x': ball_start_x, 'y': ball_start_y},
+        'ball_to': {'x': ball_dest_x, 'y': ball_dest_y},
+        'attacker_max_run': round(attacker_move_dist, 1),
+        'defender_max_run': round(defender_move_dist, 1),
+        'movements': movements,
+        'players_moved': len(movements)
+    }
+
+
+@app.route('/api/play_action', methods=['POST'])
+def play_action():
+    """Execute an action and simulate the resulting state.
+
+    Expects JSON with action details:
+    {
+        "action": "pass" | "through_ball" | "dribble" | "shoot",
+        "target_x": float,
+        "target_y": float,
+        "target_player": int (optional, for passes)
+    }
+
+    Returns simulation results and new analysis.
+    """
+    try:
+        data = request.json or {}
+
+        # Simulate the action
+        sim_result = simulate_action(data)
+
+        # Run analysis on new state
+        ball = current_state['ball']
+        current_result = calculate_position_value(ball['x'], ball['y'], depth=0, max_depth=3)
+        current_ev = current_result['value']
+        best_chain = current_result['chain']
+        current_xg = calculate_xg(ball['x'], ball['y'])
+
+        options = analyze_passing_options()
+        gaps = find_gaps()
+
+        # Tactical summary
+        ball_pressure = calculate_ball_pressure()
+        overloads = detect_overloads()
+        weak_side = get_weak_side(ball['y'])
+
+        tactical_summary = {
+            'ball_pressure': ball_pressure,
+            'pressure_level': 'HIGH' if ball_pressure > 0.6 else 'MEDIUM' if ball_pressure > 0.3 else 'LOW',
+            'weak_side': weak_side,
+            'overloads': overloads,
+            'has_overload': len(overloads) > 0,
+        }
+
+        # Chain EV info
+        chain_info = {
+            'current_position_xg': round(current_xg, 4),
+            'current_position_ev': round(current_ev, 4),
+            'best_chain': best_chain,
+            'chain_length': len(best_chain),
+        }
+
+        return jsonify({
+            'success': True,
+            'simulation': sim_result,
+            'new_state': {
+                'players': get_all_players(),
+                'ball': current_state['ball'],
+            },
+            'analysis': {
+                'gaps': gaps,
+                'options': options,
+                'best_option': options[0] if options else None,
+                'total_options': len(options),
+                'tactical': tactical_summary,
+                'chain_ev': chain_info,
+                'best_chain': best_chain,
+            }
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

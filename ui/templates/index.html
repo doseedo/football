@@ -226,6 +226,7 @@
         .option-header {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             margin-bottom: 5px;
         }
 
@@ -233,6 +234,38 @@
             font-weight: 600;
             text-transform: uppercase;
             font-size: 0.85rem;
+        }
+
+        .option-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .play-btn {
+            background: #10b981;
+            color: #fff;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            transition: all 0.2s;
+        }
+
+        .play-btn:hover {
+            background: #059669;
+            transform: scale(1.05);
+        }
+
+        .play-btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
         }
 
         .option-rec {
@@ -246,6 +279,7 @@
         .option-rec.MODERATE { background: #fbbf24; color: #000; }
         .option-rec.LOW_VALUE { background: #f97316; color: #000; }
         .option-rec.AVOID { background: #f87171; color: #000; }
+        .option-rec.BLOCKED { background: #f87171; color: #000; }
 
         .option-stats {
             display: grid;
@@ -253,6 +287,32 @@
             gap: 5px;
             font-size: 0.8rem;
             color: #888;
+        }
+
+        /* Simulation feedback */
+        .sim-feedback {
+            background: #1a3d1a;
+            border: 1px solid #10b981;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+        }
+
+        .sim-feedback .sim-header {
+            font-weight: 600;
+            color: #10b981;
+            margin-bottom: 5px;
+        }
+
+        .sim-feedback .sim-detail {
+            color: #aaa;
+            font-size: 0.8rem;
+        }
+
+        /* Movement trails on canvas */
+        .movement-trail {
+            stroke-dasharray: 4, 4;
         }
 
         /* Best option highlight */
@@ -382,6 +442,7 @@
 
             <div class="panel-section">
                 <h3>Summary</h3>
+                <div id="simFeedback" style="display: none;"></div>
                 <div class="stat-row">
                     <span class="stat-label">Ball Position</span>
                     <span class="stat-value" id="ballPos">-</span>
@@ -469,6 +530,8 @@
         let scale = 1;
         let offsetX = 0, offsetY = 0;
         let visibleGaps = new Set();  // Track which gaps are visible
+        let lastSimulation = null;  // Track last simulation for movement trails
+        let isPlaying = false;  // Prevent double-clicks
 
         // Toggle gap visibility
         function toggleGap(index) {
@@ -606,8 +669,86 @@
         async function resetScenario() {
             await fetch('/api/reset', { method: 'POST' });
             analysis = null;
+            lastSimulation = null;
             await loadState();
             updateAnalysisPanel();
+            document.getElementById('simFeedback').style.display = 'none';
+        }
+
+        // Play an action (simulate it)
+        async function playAction(optionIndex) {
+            if (isPlaying || !analysis || !analysis.options[optionIndex]) return;
+
+            isPlaying = true;
+            const opt = analysis.options[optionIndex];
+
+            // Disable all play buttons
+            document.querySelectorAll('.play-btn').forEach(btn => btn.disabled = true);
+
+            try {
+                const res = await fetch('/api/play_action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: opt.action,
+                        target_x: opt.target_x,
+                        target_y: opt.target_y,
+                        target_player: opt.target_player
+                    })
+                });
+
+                const result = await res.json();
+
+                if (result.success) {
+                    // Store simulation for movement trails
+                    lastSimulation = result.simulation;
+
+                    // Update state with new positions
+                    state = result.new_state;
+
+                    // Update analysis with new analysis
+                    analysis = result.analysis;
+                    analysis.high_value_options = analysis.options.filter(o => o.recommendation === 'HIGH_VALUE').length;
+                    analysis.safe_options = analysis.options.filter(o => o.recommendation === 'SAFE').length;
+                    analysis.total_options = analysis.options.length;
+
+                    // Show simulation feedback
+                    showSimFeedback(result.simulation, opt);
+
+                    // Re-render and update panel
+                    updateAnalysisPanel();
+                    render();
+                } else {
+                    console.error('Play action failed:', result.error);
+                }
+            } catch (e) {
+                console.error('Play action error:', e);
+            } finally {
+                isPlaying = false;
+                document.querySelectorAll('.play-btn').forEach(btn => btn.disabled = false);
+            }
+        }
+
+        // Show simulation feedback
+        function showSimFeedback(sim, opt) {
+            const feedbackEl = document.getElementById('simFeedback');
+            const actionLabel = opt.action.replace('_', ' ').toUpperCase();
+            const targetLabel = opt.target_player ? ` to #${opt.target_player}` : '';
+
+            feedbackEl.innerHTML = `
+                <div class="sim-feedback">
+                    <div class="sim-header">▶ ${actionLabel}${targetLabel}</div>
+                    <div class="sim-detail">
+                        Duration: ${sim.duration}s |
+                        Attackers ran: up to ${sim.attacker_max_run} yds |
+                        Defenders ran: up to ${sim.defender_max_run} yds
+                    </div>
+                    <div class="sim-detail" style="margin-top:3px;">
+                        ${sim.players_moved} players moved
+                    </div>
+                </div>
+            `;
+            feedbackEl.style.display = 'block';
         }
 
         // Update analysis panel
@@ -693,11 +834,11 @@
                 if (opt.target_player) {
                     actionLabel += ` → #${opt.target_player}`;
                 } else if (opt.action === 'shoot') {
-                    actionLabel = '🎯 SHOOT';
+                    actionLabel = 'SHOOT';
                 } else if (opt.action === 'dribble') {
-                    actionLabel = '🏃 DRIBBLE';
+                    actionLabel = 'DRIBBLE';
                 } else if (opt.action === 'through_ball') {
-                    actionLabel = '⚡ THROUGH BALL';
+                    actionLabel = 'THROUGH BALL';
                 }
 
                 // Extra info for passes
@@ -717,11 +858,17 @@
                     extraInfo = opt.blocked ? `<span style="color:#f87171;">BLOCKED</span>` : `<span style="color:#4ade80;">CLEAR</span>`;
                 }
 
+                // Don't allow playing blocked shots
+                const canPlay = !(opt.action === 'shoot' && opt.blocked);
+
                 optionsHtml += `
                     <div class="option-item ${isBest ? 'best' : ''}" onclick="highlightOption(${i})">
                         <div class="option-header">
                             <span class="option-type">${actionLabel}${badges}</span>
-                            <span class="option-rec ${opt.recommendation}">${opt.recommendation}</span>
+                            <div class="option-actions">
+                                ${canPlay ? `<button class="play-btn" onclick="event.stopPropagation(); playAction(${i})">▶ Play</button>` : ''}
+                                <span class="option-rec ${opt.recommendation}">${opt.recommendation}</span>
+                            </div>
                         </div>
                         <div class="option-stats">
                             <span>${opt.action === 'shoot' ? 'xG' : 'Target xG'}: ${opt.action === 'shoot' ? (opt.xg_target * 100).toFixed(1) + '%' : ((opt.target_position_value || 0) * 100).toFixed(1) + '%'}</span>
@@ -807,6 +954,11 @@
                 drawCoordinateGrid();
             }
 
+            // Draw movement trails from last simulation
+            if (lastSimulation && lastSimulation.movements) {
+                drawMovementTrails();
+            }
+
             // Draw gaps if enabled
             // Draw gaps that user has selected (click to show)
             if (analysis && visibleGaps.size > 0) {
@@ -828,6 +980,47 @@
 
             // Draw ball
             drawBall();
+        }
+
+        function drawMovementTrails() {
+            if (!lastSimulation || !lastSimulation.movements) return;
+
+            // Draw ball movement
+            const ballFrom = pitchToCanvas(lastSimulation.ball_from.x, lastSimulation.ball_from.y);
+            const ballTo = pitchToCanvas(lastSimulation.ball_to.x, lastSimulation.ball_to.y);
+
+            ctx.beginPath();
+            ctx.moveTo(ballFrom.x, ballFrom.y);
+            ctx.lineTo(ballTo.x, ballTo.y);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([8, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw player movements
+            lastSimulation.movements.forEach(move => {
+                const from = pitchToCanvas(move.from_x, move.from_y);
+                const to = pitchToCanvas(move.to_x, move.to_y);
+
+                // Color based on team
+                const color = move.team === 0 ? 'rgba(59, 130, 246, 0.5)' : 'rgba(239, 68, 68, 0.5)';
+
+                ctx.beginPath();
+                ctx.moveTo(from.x, from.y);
+                ctx.lineTo(to.x, to.y);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Small circle at start position
+                ctx.beginPath();
+                ctx.arc(from.x, from.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+            });
         }
 
         function drawXgZones() {
@@ -1194,6 +1387,10 @@
                 state.ball.x = pitch.x;
                 state.ball.y = pitch.y;
 
+                // Clear simulation trails when manually moving ball
+                lastSimulation = null;
+                document.getElementById('simFeedback').style.display = 'none';
+
                 fetch('/api/move_ball', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1250,6 +1447,10 @@
 
         function onMouseUp(e) {
             if (draggingPlayer) {
+                // Clear simulation trails when manually moving players
+                lastSimulation = null;
+                document.getElementById('simFeedback').style.display = 'none';
+
                 fetch('/api/move_player', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

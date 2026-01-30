@@ -43,6 +43,219 @@ def yards_to_meters(y):
     return y / 1.09361
 
 
+# ============================================================
+# CHAIN-BASED EXPECTED VALUE MODEL
+# ============================================================
+# EV = probability of eventually scoring from a position
+# Considers: shoot now OR pass to teammate who can shoot/pass
+# Each pass discounts by completion probability
+# ============================================================
+
+def calculate_position_value(x, y, depth=0, max_depth=2, excluded_positions=None):
+    """Calculate the Expected Value of having the ball at position (x, y).
+
+    This is the probability of eventually scoring from this position,
+    considering all options: shoot, pass, or dribble.
+
+    Args:
+        x, y: Position on pitch (yards)
+        depth: Current recursion depth
+        max_depth: How many passes ahead to look
+        excluded_positions: Positions already evaluated (prevent loops)
+
+    Returns:
+        float: Expected value (0-1) representing goal probability
+    """
+    if excluded_positions is None:
+        excluded_positions = set()
+
+    # Prevent infinite loops
+    pos_key = (round(x, 0), round(y, 0))
+    if pos_key in excluded_positions:
+        return calculate_xg(x, y)  # Terminal: just use shot xG
+    excluded_positions = excluded_positions | {pos_key}
+
+    attackers = current_state['attackers']
+    defenders = current_state['defenders']
+
+    # OPTION 1: Shoot from current position
+    shoot_xg = calculate_xg(x, y)
+    shoot_block_prob = calculate_shot_block_probability(x, y, defenders)
+    shoot_value = shoot_xg * (1 - shoot_block_prob)
+
+    # At max depth, only consider shooting
+    if depth >= max_depth:
+        return shoot_value
+
+    best_value = shoot_value
+
+    # OPTION 2: Pass to each teammate
+    for attacker in attackers:
+        if attacker['id'] == 1:  # Skip GK
+            continue
+
+        target_x = attacker['x']
+        target_y = attacker['y']
+
+        # Don't pass to current position
+        dist = calculate_distance(x, y, target_x, target_y)
+        if dist < 5:
+            continue
+
+        # Calculate pass success probability
+        pass_success = calculate_pass_success(x, y, target_x, target_y, defenders)
+
+        if pass_success < 0.3:  # Don't consider very risky passes
+            continue
+
+        # Recursively calculate value at target position
+        target_value = calculate_position_value(
+            target_x, target_y,
+            depth=depth + 1,
+            max_depth=max_depth,
+            excluded_positions=excluded_positions
+        )
+
+        # Pass value = success_prob × target_position_value
+        pass_value = pass_success * target_value
+
+        # Subtract turnover cost (lose possession = opponent attacks)
+        turnover_cost = (1 - pass_success) * 0.05  # 5% chance opponent scores from turnover
+        pass_ev = pass_value - turnover_cost
+
+        best_value = max(best_value, pass_ev)
+
+    # OPTION 3: Dribble forward (simplified)
+    dribble_options = [(8, 0), (6, 5), (6, -5)]  # Forward, forward-right, forward-left
+    for dx, dy in dribble_options:
+        new_x = x + dx
+        new_y = y + dy
+
+        # Check bounds
+        if abs(new_x) > 58 or abs(new_y) > 36:
+            continue
+
+        dribble_success = calculate_dribble_success(x, y, new_x, new_y, defenders)
+
+        if dribble_success < 0.4:
+            continue
+
+        target_value = calculate_position_value(
+            new_x, new_y,
+            depth=depth + 1,
+            max_depth=max_depth,
+            excluded_positions=excluded_positions
+        )
+
+        dribble_value = dribble_success * target_value
+        turnover_cost = (1 - dribble_success) * 0.08  # Dribble turnovers more dangerous
+        dribble_ev = dribble_value - turnover_cost
+
+        best_value = max(best_value, dribble_ev)
+
+    return best_value
+
+
+def calculate_shot_block_probability(x, y, defenders):
+    """Calculate probability that a shot from (x,y) gets blocked."""
+    goal_x = 60
+    goal_y = 0
+    block_prob = 0
+
+    for d in defenders:
+        if d['id'] == 1:  # GK handled separately in xG
+            continue
+
+        # Distance from defender to shot line
+        block_dist = point_to_line_distance(d['x'], d['y'], x, y, goal_x, goal_y)
+
+        # Only count defenders between shooter and goal
+        if d['x'] > x:
+            if block_dist < 2:
+                block_prob = max(block_prob, 0.4)
+            elif block_dist < 4:
+                block_prob = max(block_prob, 0.25)
+            elif block_dist < 6:
+                block_prob = max(block_prob, 0.1)
+
+    return min(0.7, block_prob)  # Cap at 70%
+
+
+def calculate_pass_success(from_x, from_y, to_x, to_y, defenders):
+    """Calculate probability of completing a pass."""
+    pass_dist = calculate_distance(from_x, from_y, to_x, to_y)
+
+    # Base success from distance
+    if pass_dist < 10:
+        base_success = 0.92
+    elif pass_dist < 20:
+        base_success = 0.85
+    elif pass_dist < 30:
+        base_success = 0.75
+    elif pass_dist < 40:
+        base_success = 0.65
+    else:
+        base_success = 0.50
+
+    # Reduce for defenders near passing lane
+    min_intercept_dist = float('inf')
+    for d in defenders:
+        intercept_dist = point_to_line_distance(d['x'], d['y'], from_x, from_y, to_x, to_y)
+        # Only count if defender can realistically intercept
+        d_to_ball = calculate_distance(d['x'], d['y'], from_x, from_y)
+        d_to_target = calculate_distance(d['x'], d['y'], to_x, to_y)
+        if d_to_ball < pass_dist * 1.2 or d_to_target < pass_dist * 0.8:
+            min_intercept_dist = min(min_intercept_dist, intercept_dist)
+
+    # Intercept factor
+    if min_intercept_dist < 2:
+        intercept_factor = 0.3
+    elif min_intercept_dist < 4:
+        intercept_factor = 0.5
+    elif min_intercept_dist < 6:
+        intercept_factor = 0.7
+    elif min_intercept_dist < 10:
+        intercept_factor = 0.85
+    else:
+        intercept_factor = 1.0
+
+    # Pressure on receiver reduces success
+    receiver_pressure = 0
+    for d in defenders:
+        d_to_target = calculate_distance(d['x'], d['y'], to_x, to_y)
+        if d_to_target < 3:
+            receiver_pressure = max(receiver_pressure, 0.3)
+        elif d_to_target < 6:
+            receiver_pressure = max(receiver_pressure, 0.15)
+
+    return base_success * intercept_factor * (1 - receiver_pressure * 0.5)
+
+
+def calculate_dribble_success(from_x, from_y, to_x, to_y, defenders):
+    """Calculate probability of successful dribble."""
+    # Check defenders along dribble path and at destination
+    min_defender_dist = float('inf')
+
+    for d in defenders:
+        # Distance to dribble path
+        path_dist = point_to_line_distance(d['x'], d['y'], from_x, from_y, to_x, to_y)
+        # Distance to destination
+        dest_dist = calculate_distance(d['x'], d['y'], to_x, to_y)
+
+        min_defender_dist = min(min_defender_dist, path_dist, dest_dist)
+
+    if min_defender_dist < 3:
+        return 0.25
+    elif min_defender_dist < 5:
+        return 0.45
+    elif min_defender_dist < 8:
+        return 0.65
+    elif min_defender_dist < 12:
+        return 0.80
+    else:
+        return 0.90
+
+
 def create_default_scenario():
     """Create default game scenario with numbered players.
 
@@ -395,31 +608,34 @@ def find_gaps():
 
 
 def analyze_passing_options():
-    """Analyze all passing options from current ball position.
+    """Analyze all passing options using chain-based Expected Value.
 
-    Implements 5 football realism improvements:
-    1. Receiver check direction - bonus for players who can play forward
-    2. Progression bonus - reward moving ball toward goal
-    3. Pressure penalty - penalize back/square passes under pressure
-    4. Overload bonus - reward passes exploiting numerical advantages
-    5. Game Model weighting - switches, runs in behind, weak side
+    EV = probability of eventually scoring from this position
+    Chain calculation: pass_success × target_position_value
+
+    Target position value considers what the receiver can do:
+    - Shoot immediately (xG)
+    - Pass to another teammate (chains further)
+    - Dribble to better position
+
+    This creates realistic football decision-making where a midfielder
+    in a low xG zone can have high EV by passing to a striker.
     """
     options = []
     ball = current_state['ball']
     attackers = current_state['attackers']
     defenders = current_state['defenders']
 
-    # Current xG at ball position
+    # Current position value (what's the EV of keeping the ball here?)
+    current_position_value = calculate_position_value(ball['x'], ball['y'], depth=0, max_depth=2)
     current_xg = calculate_xg(ball['x'], ball['y'])
 
-    # IMPROVEMENT 3: Calculate pressure on ball carrier
+    # Calculate pressure on ball carrier
     ball_pressure = calculate_ball_pressure()
 
-    # IMPROVEMENT 4: Detect overloads
+    # Detect overloads and weak side for tactical tags
     overloads = detect_overloads()
     overload_zones = {o['zone']: o for o in overloads}
-
-    # IMPROVEMENT 5: Determine weak side
     weak_side = get_weak_side(ball['y'])
 
     # Analyze pass to each teammate
@@ -435,26 +651,28 @@ def analyze_passing_options():
         target_x = attacker['x']
         target_y = attacker['y']
 
-        # Calculate pass success probability
-        pass_dist = dist_to_ball
+        # ========================================
+        # CHAIN-BASED EV CALCULATION
+        # ========================================
 
-        # Find nearest defender to passing lane
-        min_intercept_dist = float('inf')
-        for defender in defenders:
-            # Distance from defender to the pass line
-            intercept_dist = point_to_line_distance(
-                defender['x'], defender['y'],
-                ball['x'], ball['y'],
-                target_x, target_y
-            )
-            min_intercept_dist = min(min_intercept_dist, intercept_dist)
+        # 1. Calculate pass success probability
+        success_prob = calculate_pass_success(ball['x'], ball['y'], target_x, target_y, defenders)
 
-        # Success probability based on distance and interception risk
-        base_success = max(0.3, 1.0 - pass_dist / 80)
-        intercept_factor = min(1.0, min_intercept_dist / 8)
-        success_prob = base_success * intercept_factor
+        # 2. Calculate target position value (what can receiver do?)
+        #    This recursively considers: shoot, pass further, or dribble
+        target_position_value = calculate_position_value(
+            target_x, target_y,
+            depth=1,  # Start at depth 1 since we're already making one pass
+            max_depth=2  # Look 1-2 more passes ahead
+        )
 
-        # xG at target position
+        # 3. EV = pass_success × target_value - turnover_cost
+        turnover_cost = (1 - success_prob) * 0.05  # Losing possession has cost
+        ev = success_prob * target_position_value - turnover_cost
+
+        # ========================================
+        # Additional metrics for display
+        # ========================================
         target_xg = calculate_xg(target_x, target_y)
         xg_gain = target_xg - current_xg
 
@@ -465,110 +683,53 @@ def analyze_passing_options():
             min_defender_dist = min(min_defender_dist, d)
         receiver_pressure = max(0, 1.0 - min_defender_dist / 15)
 
-        # Is receiver facing goal?
-        receiver_facing_goal = target_x > ball['x']
-
-        # ========================================
-        # IMPROVEMENT 1: Receiver can play forward
-        # ========================================
+        # Forward space check
         forward_space = check_receiver_can_play_forward(target_x, target_y)
-        forward_bonus = forward_space * 0.02  # Up to +0.02 EV bonus
 
-        # ========================================
-        # IMPROVEMENT 2: Progression bonus
-        # ========================================
-        x_progression = target_x - ball['x']
-        if x_progression > 20:
-            progression_bonus = 0.025  # Big forward pass
-        elif x_progression > 10:
-            progression_bonus = 0.015  # Good forward pass
-        elif x_progression > 0:
-            progression_bonus = 0.005  # Small forward pass
-        else:
-            progression_bonus = 0  # Back pass - no bonus
+        # Tactical tags
+        is_switch = is_switch_of_play(ball['y'], target_y)
+        is_behind = is_run_in_behind(ball['x'], target_x, receiver_pressure)
 
-        # ========================================
-        # IMPROVEMENT 3: Pressure penalty for back/square passes
-        # ========================================
-        pressure_penalty = 0
-        if ball_pressure > 0.6:  # Under high pressure
-            if x_progression < 0:  # Back pass
-                pressure_penalty = -0.02  # Penalize - risky under pressure
-            elif abs(target_y - ball['y']) > abs(x_progression):  # Square pass
-                pressure_penalty = -0.01  # Slight penalty
-
-        # ========================================
-        # IMPROVEMENT 4: Overload bonus
-        # ========================================
-        overload_bonus = 0
-        # Check if target player is in an overloaded zone
+        # Check if in overload zone
+        in_overload = False
         for zone_name, overload in overload_zones.items():
             if attacker['id'] in overload['players']:
-                # Bonus based on numerical advantage
-                overload_bonus = overload['advantage'] * 0.015
+                in_overload = True
                 break
 
         # ========================================
-        # IMPROVEMENT 5: Game Model principles
+        # Recommendation based on chain EV
         # ========================================
-        game_model_bonus = 0
+        # Compare to current position value - is this pass worth it?
+        ev_improvement = ev - current_position_value
 
-        # 5a. Switch of play bonus (exploit weak side)
-        if is_switch_of_play(ball['y'], target_y):
-            game_model_bonus += 0.02
-            # Extra bonus if switching to weak side
-            if (weak_side == 'left' and target_y < -10) or (weak_side == 'right' and target_y > 10):
-                game_model_bonus += 0.01
-
-        # 5b. Run in behind bonus
-        if is_run_in_behind(ball['x'], target_x, receiver_pressure):
-            game_model_bonus += 0.025
-
-        # 5c. Half-space bonus (between channels)
-        if 5 < abs(target_y) < 20 and target_x > ball['x'] + 10:
-            game_model_bonus += 0.01
-
-        # ========================================
-        # Calculate final Expected Value
-        # ========================================
-        base_ev = success_prob * (target_xg + 0.01) - (1 - success_prob) * 0.05
-
-        # Add all bonuses and penalties
-        ev = (base_ev +
-              forward_bonus +
-              progression_bonus +
-              pressure_penalty +
-              overload_bonus +
-              game_model_bonus)
-
-        # Build detailed breakdown for UI
-        ev_breakdown = {
-            'base': round(base_ev, 4),
-            'forward_space': round(forward_bonus, 4),
-            'progression': round(progression_bonus, 4),
-            'pressure': round(pressure_penalty, 4),
-            'overload': round(overload_bonus, 4),
-            'game_model': round(game_model_bonus, 4),
-        }
-
-        # Recommendation based on adjusted EV
-        if ev > 0.02 and success_prob > 0.65:
+        if ev > 0.15 and success_prob > 0.7:
             rec = "HIGH_VALUE"
-        elif ev > 0.01 and success_prob > 0.7:
+        elif ev > 0.10 and success_prob > 0.65:
             rec = "HIGH_VALUE"
-        elif success_prob > 0.8 and ev > 0:
+        elif ev > 0.08 and success_prob > 0.75:
             rec = "SAFE"
-        elif ev > 0.005 and success_prob > 0.5:
+        elif ev > 0.05 and success_prob > 0.6:
             rec = "MODERATE"
-        elif success_prob > 0.5:
+        elif success_prob > 0.8 and ev > current_position_value:
+            rec = "SAFE"
+        elif ev > 0.03 and success_prob > 0.5:
             rec = "LOW_VALUE"
         else:
             rec = "AVOID"
 
-        # Build action type (pass vs through_ball)
-        action_type = 'pass'
-        if is_run_in_behind(ball['x'], target_x, receiver_pressure):
-            action_type = 'through_ball'
+        # Build action type
+        action_type = 'through_ball' if is_behind else 'pass'
+
+        # EV breakdown for transparency
+        ev_breakdown = {
+            'pass_success': round(success_prob, 3),
+            'target_position_value': round(target_position_value, 4),
+            'turnover_cost': round(turnover_cost, 4),
+            'final_ev': round(ev, 4),
+            'current_ev': round(current_position_value, 4),
+            'ev_gain': round(ev - current_position_value, 4),
+        }
 
         options.append({
             'action': action_type,
@@ -578,64 +739,69 @@ def analyze_passing_options():
             'success_prob': success_prob,
             'xg_gain': xg_gain,
             'xg_target': target_xg,
+            'target_position_value': target_position_value,
             'ev': ev,
             'ev_breakdown': ev_breakdown,
             'recommendation': rec,
             'receiver_pressure': receiver_pressure,
-            'receiver_facing_goal': receiver_facing_goal,
+            'receiver_facing_goal': target_x > ball['x'],
             'receiver_forward_space': forward_space,
-            'intercept_prob': 1 - intercept_factor,
-            'is_switch': is_switch_of_play(ball['y'], target_y),
-            'is_in_behind': is_run_in_behind(ball['x'], target_x, receiver_pressure),
-            'in_overload': overload_bonus > 0,
+            'intercept_prob': 1 - success_prob,
+            'is_switch': is_switch,
+            'is_in_behind': is_behind,
+            'in_overload': in_overload,
         })
 
+    # ========================================
     # Analyze shooting option
+    # ========================================
     goal_x = 60
     goal_y = 0
     shoot_dist = calculate_distance(ball['x'], ball['y'], goal_x, goal_y)
 
     if shoot_dist < 40:  # Only consider shots from reasonable distance
         shot_xg = calculate_xg(ball['x'], ball['y'])
+        block_prob = calculate_shot_block_probability(ball['x'], ball['y'], defenders)
 
-        # Check for blocking defenders
-        block_prob = 0
-        for defender in defenders:
-            block_dist = point_to_line_distance(
-                defender['x'], defender['y'],
-                ball['x'], ball['y'],
-                goal_x, goal_y
-            )
-            if block_dist < 3 and defender['x'] > ball['x']:
-                block_prob = max(block_prob, 0.3)
-            elif block_dist < 6 and defender['x'] > ball['x']:
-                block_prob = max(block_prob, 0.15)
+        # Shot EV = xG × (1 - block_prob)
+        # This IS the chain terminal - shooting ends the possession
+        shot_ev = shot_xg * (1 - block_prob)
 
-        shot_success = shot_xg * (1 - block_prob)
-        shot_ev = shot_success - (1 - shot_success) * 0.02
-
-        if shot_xg > 0.15:
-            rec = "HIGH_VALUE"
-        elif shot_xg > 0.08:
-            rec = "MODERATE"
-        elif shot_xg > 0.04:
-            rec = "LOW_VALUE"
+        # Compare to current position value
+        if shot_ev > current_position_value * 0.9:  # Shooting is close to or better than best option
+            if shot_xg > 0.15:
+                rec = "HIGH_VALUE"
+            elif shot_xg > 0.10:
+                rec = "HIGH_VALUE"
+            elif shot_xg > 0.06:
+                rec = "MODERATE"
+            else:
+                rec = "LOW_VALUE"
         else:
-            rec = "AVOID"
+            rec = "AVOID"  # Better options exist
 
         options.append({
             'action': 'shoot',
             'target_x': goal_x,
             'target_y': goal_y,
-            'success_prob': shot_success,
+            'success_prob': shot_xg,  # For shots, success = scoring
             'xg_target': shot_xg,
-            'xg_gain': shot_xg,
+            'xg_gain': shot_xg - current_xg,
+            'target_position_value': shot_xg,  # Terminal value
             'ev': shot_ev,
+            'ev_breakdown': {
+                'shot_xg': round(shot_xg, 4),
+                'block_prob': round(block_prob, 4),
+                'final_ev': round(shot_ev, 4),
+                'current_ev': round(current_position_value, 4),
+            },
             'recommendation': rec,
             'intercept_prob': block_prob,
         })
 
+    # ========================================
     # Analyze dribble options
+    # ========================================
     dribble_directions = [
         (10, 0),   # Forward
         (8, 8),    # Forward-right
@@ -652,24 +818,33 @@ def analyze_passing_options():
         if abs(target_x) > 58 or abs(target_y) > 36:
             continue
 
-        # Check for defenders in the way
-        min_defender_dist = float('inf')
-        for defender in defenders:
-            d = calculate_distance(defender['x'], defender['y'], target_x, target_y)
-            min_defender_dist = min(min_defender_dist, d)
+        # Calculate dribble success using chain model
+        success_prob = calculate_dribble_success(ball['x'], ball['y'], target_x, target_y, defenders)
 
-        if min_defender_dist < 4:
-            continue  # Too close to defender
+        if success_prob < 0.4:
+            continue  # Too risky
 
-        success_prob = min(0.9, min_defender_dist / 12)
+        # Target position value (what can we do after dribbling there?)
+        target_position_value = calculate_position_value(
+            target_x, target_y,
+            depth=1,
+            max_depth=2
+        )
+
+        # Dribble EV = success × target_value - turnover_cost
+        turnover_cost = (1 - success_prob) * 0.08  # Dribble turnovers are costly
+        ev = success_prob * target_position_value - turnover_cost
+
         target_xg = calculate_xg(target_x, target_y)
         xg_gain = target_xg - current_xg
-        ev = success_prob * xg_gain - (1 - success_prob) * 0.03
 
-        if ev > 0.005 and success_prob > 0.6:
-            rec = "MODERATE"
-        elif success_prob > 0.7:
+        # Recommendation based on EV vs current
+        if ev > current_position_value + 0.02 and success_prob > 0.6:
+            rec = "HIGH_VALUE"
+        elif ev > current_position_value and success_prob > 0.7:
             rec = "SAFE"
+        elif ev > current_position_value * 0.9 and success_prob > 0.5:
+            rec = "MODERATE"
         else:
             rec = "LOW_VALUE"
 
@@ -680,11 +855,19 @@ def analyze_passing_options():
             'success_prob': success_prob,
             'xg_gain': xg_gain,
             'xg_target': target_xg,
+            'target_position_value': target_position_value,
             'ev': ev,
+            'ev_breakdown': {
+                'dribble_success': round(success_prob, 3),
+                'target_position_value': round(target_position_value, 4),
+                'turnover_cost': round(turnover_cost, 4),
+                'final_ev': round(ev, 4),
+                'current_ev': round(current_position_value, 4),
+            },
             'recommendation': rec,
         })
 
-    # Sort by expected value
+    # Sort by expected value (chain-based)
     options.sort(key=lambda o: -o['ev'])
 
     return options
@@ -762,7 +945,11 @@ def analyze():
         # Find gaps
         gaps = find_gaps()
 
-        # Analyze options (now with all 5 improvements)
+        # Calculate current position value (chain-based EV)
+        current_ev = calculate_position_value(ball['x'], ball['y'], depth=0, max_depth=2)
+        current_xg = calculate_xg(ball['x'], ball['y'])
+
+        # Analyze options using chain-based EV model
         options = analyze_passing_options()
 
         # Calculate situational metrics
@@ -815,6 +1002,14 @@ def analyze():
 
         tactical_summary['advice'] = advice
 
+        # Chain EV info
+        chain_info = {
+            'current_position_xg': round(current_xg, 4),
+            'current_position_ev': round(current_ev, 4),
+            'chain_depth': 2,
+            'explanation': f"From here, your best chain of plays gives {current_ev:.1%} chance to score"
+        }
+
         return jsonify({
             'gaps': gaps,
             'options': options,
@@ -823,6 +1018,7 @@ def analyze():
             'high_value_options': high_value,
             'safe_options': safe,
             'tactical': tactical_summary,
+            'chain_ev': chain_info,
         })
     except Exception as e:
         import traceback

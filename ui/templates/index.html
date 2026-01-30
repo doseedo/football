@@ -390,6 +390,14 @@
                     <span class="stat-value" id="ballPos">-</span>
                 </div>
                 <div class="stat-row">
+                    <span class="stat-label">Shot xG Here</span>
+                    <span class="stat-value" id="currentXg">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Chain EV</span>
+                    <span class="stat-value positive" id="currentEv" title="Probability of scoring considering all options">-</span>
+                </div>
+                <div class="stat-row">
                     <span class="stat-label">Total Options</span>
                     <span class="stat-value" id="totalOptions">-</span>
                 </div>
@@ -629,6 +637,13 @@
             document.getElementById('highValueOptions').textContent = analysis.high_value_options;
             document.getElementById('safeOptions').textContent = analysis.safe_options;
 
+            // Chain EV info
+            if (analysis.chain_ev) {
+                document.getElementById('currentXg').textContent = (analysis.chain_ev.current_position_xg * 100).toFixed(1) + '%';
+                document.getElementById('currentEv').textContent = (analysis.chain_ev.current_position_ev * 100).toFixed(1) + '%';
+                document.getElementById('currentEv').title = analysis.chain_ev.explanation;
+            }
+
             // Gaps
             let gapsHtml = '';
             analysis.gaps.slice(0, 5).forEach((gap, i) => {
@@ -695,9 +710,9 @@
                         </div>
                         <div class="option-stats">
                             <span>Success: ${(opt.success_prob * 100).toFixed(0)}%</span>
-                            <span>xG: ${opt.action === 'shoot' ? opt.xg_target.toFixed(3) : (opt.xg_gain >= 0 ? '+' : '') + opt.xg_gain.toFixed(3)}</span>
+                            <span>${opt.action === 'shoot' ? 'xG' : 'Target EV'}: ${opt.action === 'shoot' ? (opt.xg_target * 100).toFixed(1) + '%' : (opt.target_position_value * 100).toFixed(1) + '%'}</span>
                             ${extraInfo}
-                            <span>EV: ${opt.ev >= 0 ? '+' : ''}${opt.ev.toFixed(4)}</span>
+                            <span>Chain EV: ${(opt.ev * 100).toFixed(1)}%</span>
                         </div>
                     </div>
                 `;
@@ -707,11 +722,13 @@
             // Best option
             if (analysis.best_option) {
                 const opt = analysis.best_option;
+                const currentEv = analysis.chain_ev ? analysis.chain_ev.current_position_ev : 0;
+                const evGain = opt.ev - currentEv;
                 document.getElementById('bestOptionPanel').style.display = 'block';
                 document.getElementById('bestOptionContent').innerHTML = `
                     <div class="stat-row">
                         <span class="stat-label">Action</span>
-                        <span class="stat-value">${opt.action.toUpperCase()}</span>
+                        <span class="stat-value">${opt.action.toUpperCase().replace('_', ' ')}</span>
                     </div>
                     ${opt.target_player ? `
                     <div class="stat-row">
@@ -720,12 +737,22 @@
                     </div>
                     ` : ''}
                     <div class="stat-row">
-                        <span class="stat-label">Success</span>
+                        <span class="stat-label">Pass/Shot Success</span>
                         <span class="stat-value">${(opt.success_prob * 100).toFixed(0)}%</span>
                     </div>
+                    ${opt.target_position_value ? `
                     <div class="stat-row">
-                        <span class="stat-label">Expected Value</span>
-                        <span class="stat-value ${opt.ev >= 0 ? 'positive' : 'negative'}">${opt.ev >= 0 ? '+' : ''}${opt.ev.toFixed(4)}</span>
+                        <span class="stat-label">Target Position EV</span>
+                        <span class="stat-value">${(opt.target_position_value * 100).toFixed(1)}%</span>
+                    </div>
+                    ` : ''}
+                    <div class="stat-row">
+                        <span class="stat-label">Chain EV</span>
+                        <span class="stat-value positive">${(opt.ev * 100).toFixed(1)}%</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">EV vs Hold</span>
+                        <span class="stat-value ${evGain >= 0 ? 'positive' : 'negative'}">${evGain >= 0 ? '+' : ''}${(evGain * 100).toFixed(1)}%</span>
                     </div>
                 `;
             } else {

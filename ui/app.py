@@ -553,8 +553,8 @@ def calculate_position_value(x, y, depth=0, max_depth=2, excluded_positions=None
                     'chain': [action_desc] + target_result['chain']
                 }
 
-    # OPTION 3: Dribble forward
-    dribble_options = [(8, 0), (6, 5), (6, -5)]
+    # OPTION 3: Dribble forward (short distances only)
+    dribble_options = [(5, 0), (4, 4), (4, -4)]
     for dx, dy in dribble_options:
         new_x = x + dx
         new_y = y + dy
@@ -669,8 +669,8 @@ def calculate_pass_success(from_x, from_y, to_x, to_y, defenders):
 def calculate_dribble_success(from_x, from_y, to_x, to_y, defenders):
     """Calculate if a dribble can succeed (binary: 100% or 0%).
 
-    Perfect execution assumed - dribble only fails if defender blocks path.
-    Considers time for player to dribble vs defender to intercept.
+    Perfect execution assumed - dribble only fails if defender can intercept.
+    Uses same physics model as pass interception - checks ALL defenders.
 
     Args:
         from_x, from_y: Dribble start
@@ -681,40 +681,52 @@ def calculate_dribble_success(from_x, from_y, to_x, to_y, defenders):
         float: 1.0 if dribble succeeds, 0.0 if blocked
     """
     dribble_dist = calculate_distance(from_x, from_y, to_x, to_y)
+    if dribble_dist < 1:
+        return 1.0
 
     # Dribbling speed is slower than sprinting (about 70% of top speed)
     DRIBBLE_SPEED = TOP_SPEED * 0.7
-    dribble_time = dribble_dist / DRIBBLE_SPEED
+
+    # Normalize dribble direction
+    dx = (to_x - from_x) / dribble_dist
+    dy = (to_y - from_y) / dribble_dist
 
     for d in defenders:
         if d.get('id') == 1:  # Skip GK
             continue
 
-        # Distance from defender to dribble path
-        path_dist = point_to_line_distance(d['x'], d['y'], from_x, from_y, to_x, to_y)
+        # Vector from dribble start to defender
+        to_def_x = d['x'] - from_x
+        to_def_y = d['y'] - from_y
 
-        # If defender is within tackle range of the path
-        if path_dist < PLAYER_WIDTH * 2:
-            # Calculate where on the path the defender can intercept
-            # Find closest point on dribble path to defender
-            dx = to_x - from_x
-            dy = to_y - from_y
-            if dribble_dist > 0:
-                t = max(0, min(1, ((d['x'] - from_x) * dx + (d['y'] - from_y) * dy) / (dribble_dist ** 2)))
-                intercept_x = from_x + t * dx
-                intercept_y = from_y + t * dy
+        # Project defender onto dribble path
+        proj_dist = to_def_x * dx + to_def_y * dy
 
-                # Time for dribbler to reach intercept point
-                dist_to_intercept = calculate_distance(from_x, from_y, intercept_x, intercept_y)
-                dribbler_time = dist_to_intercept / DRIBBLE_SPEED
+        # Skip defenders behind the dribbler or beyond destination
+        if proj_dist < 0 or proj_dist > dribble_dist:
+            continue
 
-                # Time for defender to reach intercept point
-                def_dist = calculate_distance(d['x'], d['y'], intercept_x, intercept_y)
-                defender_time = REACTION_TIME + time_to_run_distance(max(0, def_dist - PLAYER_WIDTH))
+        # Closest point on dribble path to defender
+        intercept_x = from_x + proj_dist * dx
+        intercept_y = from_y + proj_dist * dy
 
-                # If defender arrives first or at same time, dribble fails
-                if defender_time <= dribbler_time:
-                    return 0.0
+        # Distance from defender to intercept point (perpendicular distance to path)
+        def_to_intercept = calculate_distance(d['x'], d['y'], intercept_x, intercept_y)
+
+        # If defender is already standing in the path, blocked immediately
+        if def_to_intercept < PLAYER_WIDTH * 1.5:  # 1.5 yards - can't dribble through
+            return 0.0
+
+        # Time for dribbler to reach intercept point
+        dribbler_time = proj_dist / DRIBBLE_SPEED
+
+        # Time for defender to reach intercept point (needs to get within PLAYER_WIDTH)
+        run_dist = max(0, def_to_intercept - PLAYER_WIDTH)
+        defender_time = REACTION_TIME + time_to_run_distance(run_dist)
+
+        # If defender arrives first or at same time, dribble fails
+        if defender_time <= dribbler_time:
+            return 0.0
 
     # No defender can block - dribble succeeds
     return 1.0
@@ -1368,13 +1380,14 @@ def analyze_passing_options():
 
     # ========================================
     # Analyze dribble options (binary: blocked or not blocked)
+    # Dribbles are short movements - longer runs require space
     # ========================================
     dribble_directions = [
-        (10, 0),   # Forward
-        (8, 8),    # Forward-right
-        (8, -8),   # Forward-left
-        (5, 12),   # Wide right
-        (5, -12),  # Wide left
+        (5, 0),    # Short forward
+        (4, 4),    # Short diagonal right
+        (4, -4),   # Short diagonal left
+        (3, 6),    # Wide right
+        (3, -6),   # Wide left
     ]
 
     for dx, dy in dribble_directions:

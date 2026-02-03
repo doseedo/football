@@ -396,7 +396,7 @@ Agents explore within these learned bounds. They can try novel combinations, but
 
 ---
 
-**How Search Works (Stockfish-Style Tree Exploration):**
+**How Search Works (Tree Exploration):**
 
 Not fixed depth lookahead. Variable depth tree exploration:
 
@@ -426,7 +426,7 @@ Ball reception moment
 - **Uncertainty limit:** Stop if we're too far from known patterns in our database
 - **Return:** The path with highest expected value of reaching scoring position
 
-This mirrors how Stockfish explores chess — not uniform depth, but intelligent allocation of compute to promising lines.
+This is intelligent tree search — not uniform depth, but smart allocation of compute to promising lines.
 
 ---
 
